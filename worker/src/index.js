@@ -182,33 +182,93 @@ async function buildMarketPayload() {
   };
 }
 
-async function fetchWebContext(question) {
-  const sources = [];
-  const snippets = [];
-  try {
-    const u = `https://api.duckduckgo.com/?q=${encodeURIComponent(question)}&format=json&no_html=1&skip_disambig=1`;
-    const r = await fetch(u, { headers: { "accept": "application/json" } });
-    if (r.ok) {
-      const j = await r.json();
-      if (j.AbstractText) {
-        snippets.push(j.AbstractText);
-        if (j.AbstractURL) sources.push({ title: j.Heading || "DuckDuckGo source", url: j.AbstractURL });
-      }
-      const topics = Array.isArray(j.RelatedTopics) ? j.RelatedTopics : [];
-      for (const t of topics) {
-        if (snippets.length >= 3) break;
-        if (t?.Text) {
-          snippets.push(t.Text);
-          if (t.FirstURL) sources.push({ title: t.Text.slice(0, 70), url: t.FirstURL });
-        }
-      }
-    }
-  } catch (_) {}
 
-  return {
-    text: snippets.slice(0, 3).join("\n"),
-    sources: sources.slice(0, 3)
-  };
+function extractText(value, depth = 0) {
+  if (depth > 7 || value == null) return "";
+  if (typeof value === "string") return value.trim();
+
+  if (Array.isArray(value)) {
+    return value
+      .map(v => extractText(v, depth + 1))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
+  if (typeof value !== "object") return "";
+
+  const directKeys = ["output_text", "text", "content"];
+  for (const key of directKeys) {
+    if (typeof value[key] === "string" && value[key].trim()) {
+      return value[key].trim();
+    }
+  }
+
+  // Cloudflare legacy/Workers AI shape.
+  if (typeof value.response === "string" && value.response.trim()) {
+    return value.response.trim();
+  }
+
+  // OpenAI Chat Completions shape used by current GLM Workers AI responses.
+  const choiceContent = value?.choices?.[0]?.message?.content;
+  if (choiceContent) {
+    const t = extractText(choiceContent, depth + 1);
+    if (t) return t;
+  }
+
+  // Some models/wrappers nest the actual response.
+  for (const key of ["response", "result", "output", "message", "data"]) {
+    if (value[key] && typeof value[key] === "object") {
+      const t = extractText(value[key], depth + 1);
+      if (t) return t;
+    }
+  }
+
+  return "";
+}
+
+function collectSources(value, out = [], seen = new Set(), depth = 0) {
+  if (depth > 8 || value == null || typeof value !== "object") return out;
+  if (seen.has(value)) return out;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectSources(item, out, seen, depth + 1);
+    return out;
+  }
+
+  const citation = value.url_citation || value.citation;
+  if (citation && typeof citation === "object" && citation.url) {
+    out.push({
+      title: citation.title || citation.url,
+      url: citation.url
+    });
+  }
+
+  if (typeof value.url === "string" && /^https?:\/\//i.test(value.url)) {
+    out.push({
+      title: value.title || value.name || value.url,
+      url: value.url
+    });
+  }
+
+  for (const v of Object.values(value)) {
+    if (v && typeof v === "object") collectSources(v, out, seen, depth + 1);
+  }
+
+  const deduped = [];
+  const urls = new Set();
+  for (const s of out) {
+    if (!s?.url || urls.has(s.url)) continue;
+    urls.add(s.url);
+    deduped.push(s);
+  }
+  out.splice(0, out.length, ...deduped.slice(0, 6));
+  return out;
+}
+
+function needsWebSearch(question) {
+  return /\b(today|latest|current|currently|now|news|recent|this week|this month|market|nifty|sensex|bank nifty|gift nifty|nav|price|yield|repo|inflation|rbi|sebi|rule|regulation|tax|taxation|budget|rate|interest rate|ipo|nfo|fund performance|return)\b/i.test(question);
 }
 
 function compactMarketContext(p) {
@@ -238,48 +298,96 @@ async function answerFinanceQuestion(question, env) {
     };
   }
 
-  const [market, web] = await Promise.all([
-    buildMarketPayload(),
-    fetchWebContext(question)
-  ]);
-
+  const market = await buildMarketPayload();
   const marketContext = compactMarketContext(market);
+  const useWeb = needsWebSearch(question);
 
   const system = `You are MoneyMantra 9 Finance AI, an educational finance assistant for an Indian user.
-Answer clearly and practically. You may answer finance, mutual funds, insurance, personal finance,
-market concepts, asset allocation, risk, taxation basics and current market questions.
-For current market claims, use ONLY the supplied live/delayed market context and explicitly state
-when data is delayed or unavailable. Do not invent live prices, news or regulations.
-If public web context is supplied, use it cautiously and distinguish it from live market data.
-Do not promise returns or present any investment as guaranteed. If a question seeks a personalized
-buy/sell/security recommendation, provide educational factors and risk considerations instead.
+Answer clearly, practically and accurately.
+
+You may answer:
+- personal finance
+- mutual funds and SIPs
+- insurance
+- retirement and goal planning
+- asset allocation and risk
+- banking and interest-rate concepts
+- Indian and global market concepts
+- taxation basics and financial regulations
+- current market questions
+
+For current-market claims:
+1. Prefer the supplied MARKET CONTEXT for prices, index moves and sector readings.
+2. State the market-data timestamp when it matters.
+3. If web search is available, use it for current news, regulations, economic events and factual verification.
+4. Never invent live prices or news.
+
+For recommendations:
+- Do not guarantee returns.
+- Do not present a personalized buy/sell/options call.
+- Explain factors, risks, suitability and alternatives.
+
 Reply in the user's language when obvious (English, Hindi or Marathi); otherwise use English.
-Be concise but useful.`;
+For factual/current answers, mention source names or URLs when the search result provides them.
+Keep the answer readable and useful rather than overly long.`;
 
   const user = `QUESTION:
 ${question}
 
-CURRENT MARKET CONTEXT:
-${JSON.stringify(marketContext)}
+LATEST MARKET CONTEXT FROM MONEYMANTRA 9 DATA PROXY:
+${JSON.stringify(marketContext)}`;
 
-PUBLIC WEB CONTEXT (may be incomplete):
-${web.text || "No relevant public context retrieved."}`;
-
-  const result = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
+  const params = {
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
     ],
-    max_completion_tokens: 900,
-    temperature: 0.25
-  });
+    max_completion_tokens: 1000,
+    temperature: 0.2
+  };
+
+  // GLM-4.7-Flash currently exposes built-in web search options on Workers AI.
+  // Use web search only for questions where freshness/current facts materially matter.
+  if (useWeb) {
+    params.web_search_options = {};
+  }
+
+  let result;
+  let webSearchUsed = useWeb;
+
+  try {
+    result = await env.AI.run("@cf/zai-org/glm-4.7-flash", params);
+  } catch (error) {
+    // If built-in web search is unavailable for a request/account, retry without it
+    // rather than failing the user's finance question completely.
+    if (useWeb) {
+      webSearchUsed = false;
+      delete params.web_search_options;
+      result = await env.AI.run("@cf/zai-org/glm-4.7-flash", params);
+    } else {
+      throw error;
+    }
+  }
+
+  const answer = extractText(result);
+  const sources = collectSources(result);
+
+  if (!answer) {
+    console.log("Unrecognized Workers AI response shape:", JSON.stringify(result).slice(0, 4000));
+    return {
+      ok: false,
+      status: 502,
+      error: "The AI model responded, but its text could not be extracted. Check Worker logs for the response shape."
+    };
+  }
 
   return {
     ok: true,
-    answer: result?.response || result?.result?.response || String(result || ""),
+    answer,
     model: "@cf/zai-org/glm-4.7-flash",
     marketGeneratedAt: market.generatedAt,
-    sources: web.sources
+    webSearchUsed,
+    sources
   };
 }
 

@@ -1007,15 +1007,23 @@ async function askAI(){
    if(!r.ok||!j.ok) throw new Error(j.error||'Finance AI request failed.');
    wait.textContent=j.answer||'No answer returned.';
    if(Array.isArray(j.sources)&&j.sources.length){
-     const src=document.createElement('div');src.className='ss';src.style.margin='4px 0 8px 4px';
-     src.textContent='Web context: '+j.sources.map(s=>s.title||s.url).join(' · ');
+     const src=document.createElement('div');src.className='ss';src.style.margin='5px 0 9px 4px';
+     const label=document.createElement('span');label.textContent='Sources: ';src.appendChild(label);
+     j.sources.forEach((s,i)=>{
+       if(i) src.appendChild(document.createTextNode(' · '));
+       const a=document.createElement('a');
+       a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';
+       a.textContent=s.title||s.url;
+       a.style.color='var(--blue)';a.style.textDecoration='underline';
+       src.appendChild(a);
+     });
      chat.appendChild(src);
    }
    const st=document.getElementById('aiStatus');
-   if(st) st.textContent=`Finance AI connected · ${j.model||'Cloudflare Workers AI'} · live market context included`;
+   if(st) st.textContent=`Finance AI connected · ${j.model||'Cloudflare Workers AI'} · market context${j.webSearchUsed?' + web search':''}`;
  }catch(e){
    const m=scoreModel();
-   wait.textContent=`Finance AI is not fully enabled yet. Market-only fallback: ${explanation(m)} Error: ${e.message}`;
+   wait.textContent=`Finance AI request could not complete. ${e?.message||'Please try again.'}`;
    const st=document.getElementById('aiStatus');
    if(st) st.textContent='Add the Workers AI binding named AI in Cloudflare to enable open-ended finance questions.';
  }

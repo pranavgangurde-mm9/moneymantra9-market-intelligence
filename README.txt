@@ -1,14 +1,13 @@
-MoneyMantra 9 Market Intelligence — Production AI & Timeline Build
+MoneyMantra 9 Market Intelligence — Finance AI Response + Web Search Fix
 
-Major fixes:
-- Genuine live-data market explanation.
-- Full Nifty 09:15–15:30 timeline from Cloudflare Worker.
-- Corrected previous-close priority in Worker percentage calculations.
-- Live Indian sector index retrieval through Worker (when upstream symbols are available).
-- Open-ended Finance AI via Cloudflare Workers AI binding.
-- Current market context automatically supplied to Finance AI.
-- Optional public web context retrieval for general finance questions.
-- Dynamic Investor Mode.
-- Separate Current Brief and Closing Report.
+Fixes:
+- [object Object] AI response bug
+- robust Workers AI text extraction
+- removes irrelevant DuckDuckGo RelatedTopics context
+- built-in Workers AI web search for freshness-sensitive finance questions
+- automatic no-search fallback if web search is unavailable
+- clickable source links when Workers AI returns URL citations
+- latest MoneyMantra market payload remains part of AI context
 
-See PRODUCTION_AI_SETUP.md.
+Update the existing Cloudflare Worker with worker/src/index.js, then replace GitHub index.html.
+See AI_BUGFIX_SETUP.md.
