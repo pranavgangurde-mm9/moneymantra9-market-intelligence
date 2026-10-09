@@ -272,7 +272,20 @@ function collectSources(value, out = [], seen = new Set(), depth = 0) {
 }
 
 function needsWebSearch(question) {
-  return /\b(today|latest|current|currently|now|news|recent|this week|this month|market|nifty|sensex|bank nifty|gift nifty|nav|price|yield|repo|inflation|rbi|sebi|rule|regulation|tax|taxation|budget|rate|interest rate|ipo|nfo|fund performance|return)\b/i.test(question);
+  const q = String(question || "").toLowerCase();
+
+  // Current market/index questions should use the MoneyMantra market payload,
+  // not internet search, unless the user explicitly asks for news/reasons/events.
+  const marketQuestion = /(market|nifty|sensex|bank nifty|india vix|vix|gift nifty|nasdaq|s&p|sp500|nikkei)/i.test(q);
+  const asksNews = /(news|why did|reason|reasons|event|events|announcement|headline|headlines)/i.test(q);
+
+  if (marketQuestion && !asksNews) return false;
+
+  // Search the web only when freshness materially matters.
+  const fresh = /(latest|current|currently|today|now|recent|this week|this month|updated|newest)/i.test(q);
+  const changingTopic = /(rbi|repo rate|sebi|tax|taxation|budget|regulation|rule|circular|inflation|gdp|interest rate|policy rate|ipo|nfo|nav|expense ratio|aum|fund performance|scheme performance)/i.test(q);
+
+  return asksNews || (fresh && changingTopic);
 }
 
 function compactMarketContext(p) {
@@ -293,11 +306,51 @@ function compactMarketContext(p) {
   };
 }
 
+
+function makeConciseAnswer(text) {
+  let t = String(text || "").trim();
+  if (!t) return "";
+
+  // Remove Markdown tables entirely.
+  t = t
+    .split("\n")
+    .filter(line => !/^\s*\|.*\|\s*$/.test(line) && !/^\s*\|?[-: ]+\|[-|: ]+\s*$/.test(line))
+    .join(" ");
+
+  // Strip common Markdown formatting and list markers.
+  t = t
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+[.)]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Enforce a maximum of three sentences, even if the model ignores the prompt.
+  try {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
+    const sentences = [...segmenter.segment(t)]
+      .map(x => x.segment.trim())
+      .filter(Boolean);
+    if (sentences.length) t = sentences.slice(0, 3).join(" ");
+  } catch (_) {
+    const sentences = t.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [t];
+    t = sentences.slice(0, 3).join(" ").trim();
+  }
+
+  // Final safety cap for unusually long sentences.
+  if (t.length > 650) t = t.slice(0, 647).trimEnd() + "...";
+  return t;
+}
+
 async function runFinanceModel(env, model, messages, useWeb) {
   const params = {
     messages,
     stream: false,
-    max_completion_tokens: 1200,
+    max_completion_tokens: 260,
     temperature: 0.2,
     // Disable hidden thinking so the model reliably produces final answer content.
     chat_template_kwargs: {
@@ -340,14 +393,16 @@ You can answer:
 - current market questions
 
 Rules:
-1. For live/current index values, use the supplied MARKET CONTEXT.
-2. For latest RBI, SEBI, tax, regulation, news or changing factual information, use web search when available.
-3. If a current fact cannot be verified, say so instead of guessing.
-4. Do not guarantee returns or issue personalized buy/sell/options calls.
-5. Explain suitability, risks and alternatives.
-6. Reply in the user's language when obvious (English, Hindi or Marathi).
-7. Keep answers practical and readable.
-8. When web sources are available, mention the source names or URLs naturally.`;
+1. Answer ONLY what the user asked.
+2. Maximum 3 short sentences. Prefer 1–2 sentences when enough.
+3. Use simple conversational language. No tables, no headings, no long lists, no Markdown formatting.
+4. For live/current index values, use the supplied MARKET CONTEXT.
+5. Use web search only when the question genuinely needs a fresh external fact such as the latest RBI/SEBI/tax/regulatory/news information.
+6. If a current fact cannot be verified, say so briefly instead of guessing.
+7. Do not guarantee returns or issue personalized buy/sell/options calls.
+8. Reply in the user's language when obvious (English, Hindi or Marathi).
+9. Do not repeat the question and do not add unrelated background information.
+10. Sources are shown separately by the app, so do not append a bibliography or URLs unless the user explicitly asks for them.`;
 
   const user = `QUESTION:
 ${question}
@@ -392,14 +447,17 @@ ${JSON.stringify(marketContext)}`;
       const sources = collectSources(result);
 
       if (answer) {
-        return {
-          ok: true,
-          answer,
-          model: attempt.model,
-          marketGeneratedAt: market.generatedAt,
-          webSearchUsed: attempt.web,
-          sources
-        };
+        const conciseAnswer = makeConciseAnswer(answer);
+        if (conciseAnswer) {
+          return {
+            ok: true,
+            answer: conciseAnswer,
+            model: attempt.model,
+            marketGeneratedAt: market.generatedAt,
+            webSearchUsed: attempt.web,
+            sources
+          };
+        }
       }
 
       lastError = `No final text returned by ${attempt.model}`;

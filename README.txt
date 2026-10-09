@@ -1,12 +1,11 @@
-MoneyMantra 9 Market Intelligence — Reliable Finance AI Build
+MoneyMantra 9 Market Intelligence — Concise Finance AI
 
-Fixes:
-- switches primary Finance AI to Gemma 4 26B
-- disables model thinking for reliable final-answer output
-- robust response parser
-- built-in web search for current/latest finance questions
-- multi-model fallback chain
-- cleaner AI errors
-- existing market proxy, timeline, sectors and reports preserved
+Changes:
+- max 3-sentence AI answers
+- no tables / headings / long Markdown
+- selective web search
+- market questions use proxy market context first
+- latest policy/regulatory/news questions may use web search
+- hard answer-length post-processing
 
-See AI_RELIABILITY_FIX.md.
+See AI_CONCISE_SETUP.md.
