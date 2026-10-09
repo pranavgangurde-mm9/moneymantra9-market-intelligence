@@ -1022,10 +1022,9 @@ async function askAI(){
    const st=document.getElementById('aiStatus');
    if(st) st.textContent=`Finance AI connected · ${j.model||'Cloudflare Workers AI'} · market context${j.webSearchUsed?' + web search':''}`;
  }catch(e){
-   const m=scoreModel();
    wait.textContent=`Finance AI request could not complete. ${e?.message||'Please try again.'}`;
    const st=document.getElementById('aiStatus');
-   if(st) st.textContent='Add the Workers AI binding named AI in Cloudflare to enable open-ended finance questions.';
+   if(st) st.textContent='Finance AI is connected, but this request could not be completed. Please try again.';
  }
  btn.disabled=false;btn.textContent='Ask';chat.scrollTop=chat.scrollHeight;
 }

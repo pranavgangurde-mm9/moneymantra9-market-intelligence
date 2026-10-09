@@ -183,45 +183,49 @@ async function buildMarketPayload() {
 }
 
 
-function extractText(value, depth = 0) {
-  if (depth > 7 || value == null) return "";
-  if (typeof value === "string") return value.trim();
+function extractText(value, depth = 0, keyHint = "") {
+  if (depth > 10 || value == null) return "";
+
+  if (typeof value === "string") {
+    const t = value.trim();
+    // Do not surface hidden reasoning fields as the final answer.
+    if (/reasoning|thinking|analysis/i.test(keyHint)) return "";
+    return t;
+  }
 
   if (Array.isArray(value)) {
-    return value
-      .map(v => extractText(v, depth + 1))
-      .filter(Boolean)
-      .join("\n")
-      .trim();
+    for (const item of value) {
+      const t = extractText(item, depth + 1, keyHint);
+      if (t) return t;
+    }
+    return "";
   }
 
   if (typeof value !== "object") return "";
 
-  const directKeys = ["output_text", "text", "content"];
-  for (const key of directKeys) {
-    if (typeof value[key] === "string" && value[key].trim()) {
-      return value[key].trim();
-    }
-  }
-
-  // Cloudflare legacy/Workers AI shape.
-  if (typeof value.response === "string" && value.response.trim()) {
-    return value.response.trim();
-  }
-
-  // OpenAI Chat Completions shape used by current GLM Workers AI responses.
-  const choiceContent = value?.choices?.[0]?.message?.content;
-  if (choiceContent) {
-    const t = extractText(choiceContent, depth + 1);
+  // Standard Workers AI / OpenAI-compatible response.
+  const standard = value?.choices?.[0]?.message?.content;
+  if (standard != null) {
+    const t = extractText(standard, depth + 1, "content");
     if (t) return t;
   }
 
-  // Some models/wrappers nest the actual response.
-  for (const key of ["response", "result", "output", "message", "data"]) {
-    if (value[key] && typeof value[key] === "object") {
-      const t = extractText(value[key], depth + 1);
+  // Common response containers.
+  for (const key of ["answer", "output_text", "response", "content", "text", "final", "result", "output", "message"]) {
+    if (value[key] != null) {
+      const t = extractText(value[key], depth + 1, key);
       if (t) return t;
     }
+  }
+
+  // Generic fallback: walk non-reasoning fields, prioritizing useful text-bearing keys.
+  const entries = Object.entries(value).filter(([k]) => !/reasoning|thinking|analysis|usage|id|model|created|fingerprint/i.test(k));
+  const priority = ["value", "body", "data", "choices", "messages"];
+  entries.sort(([a],[b]) => priority.indexOf(b) - priority.indexOf(a));
+
+  for (const [k, v] of entries) {
+    const t = extractText(v, depth + 1, k);
+    if (t && t.length > 2) return t;
   }
 
   return "";
@@ -289,6 +293,25 @@ function compactMarketContext(p) {
   };
 }
 
+async function runFinanceModel(env, model, messages, useWeb) {
+  const params = {
+    messages,
+    stream: false,
+    max_completion_tokens: 1200,
+    temperature: 0.2,
+    // Disable hidden thinking so the model reliably produces final answer content.
+    chat_template_kwargs: {
+      enable_thinking: false
+    }
+  };
+
+  if (useWeb) {
+    params.web_search_options = {};
+  }
+
+  return env.AI.run(model, params);
+}
+
 async function answerFinanceQuestion(question, env) {
   if (!env.AI) {
     return {
@@ -300,94 +323,103 @@ async function answerFinanceQuestion(question, env) {
 
   const market = await buildMarketPayload();
   const marketContext = compactMarketContext(market);
-  const useWeb = needsWebSearch(question);
+  const wantsWeb = needsWebSearch(question);
 
-  const system = `You are MoneyMantra 9 Finance AI, an educational finance assistant for an Indian user.
-Answer clearly, practically and accurately.
+  const system = `You are MoneyMantra 9 Finance AI, an educational finance assistant focused on Indian users.
 
-You may answer:
-- personal finance
-- mutual funds and SIPs
+You can answer:
+- personal finance and budgeting
+- emergency funds
 - insurance
+- mutual funds, SIP, SWP, STP and ETFs
 - retirement and goal planning
 - asset allocation and risk
-- banking and interest-rate concepts
+- banking, interest rates and inflation
+- RBI / SEBI / tax concepts and regulations
 - Indian and global market concepts
-- taxation basics and financial regulations
 - current market questions
 
-For current-market claims:
-1. Prefer the supplied MARKET CONTEXT for prices, index moves and sector readings.
-2. State the market-data timestamp when it matters.
-3. If web search is available, use it for current news, regulations, economic events and factual verification.
-4. Never invent live prices or news.
-
-For recommendations:
-- Do not guarantee returns.
-- Do not present a personalized buy/sell/options call.
-- Explain factors, risks, suitability and alternatives.
-
-Reply in the user's language when obvious (English, Hindi or Marathi); otherwise use English.
-For factual/current answers, mention source names or URLs when the search result provides them.
-Keep the answer readable and useful rather than overly long.`;
+Rules:
+1. For live/current index values, use the supplied MARKET CONTEXT.
+2. For latest RBI, SEBI, tax, regulation, news or changing factual information, use web search when available.
+3. If a current fact cannot be verified, say so instead of guessing.
+4. Do not guarantee returns or issue personalized buy/sell/options calls.
+5. Explain suitability, risks and alternatives.
+6. Reply in the user's language when obvious (English, Hindi or Marathi).
+7. Keep answers practical and readable.
+8. When web sources are available, mention the source names or URLs naturally.`;
 
   const user = `QUESTION:
 ${question}
 
-LATEST MARKET CONTEXT FROM MONEYMANTRA 9 DATA PROXY:
+MARKET CONTEXT:
 ${JSON.stringify(marketContext)}`;
 
-  const params = {
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ],
-    max_completion_tokens: 1000,
-    temperature: 0.2
-  };
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: user }
+  ];
 
-  // GLM-4.7-Flash currently exposes built-in web search options on Workers AI.
-  // Use web search only for questions where freshness/current facts materially matter.
-  if (useWeb) {
-    params.web_search_options = {};
+  const attempts = [];
+
+  // Primary: Gemma 4 with thinking disabled. Cloudflare's own Workers AI
+  // getting-started guide uses this model with enable_thinking:false.
+  attempts.push({
+    model: "@cf/google/gemma-4-26b-a4b-it",
+    web: wantsWeb
+  });
+
+  // Retry same model without web search in case the web-search path fails.
+  if (wantsWeb) {
+    attempts.push({
+      model: "@cf/google/gemma-4-26b-a4b-it",
+      web: false
+    });
   }
 
-  let result;
-  let webSearchUsed = useWeb;
+  // Final model fallback.
+  attempts.push({
+    model: "@cf/zai-org/glm-4.7-flash",
+    web: false
+  });
 
-  try {
-    result = await env.AI.run("@cf/zai-org/glm-4.7-flash", params);
-  } catch (error) {
-    // If built-in web search is unavailable for a request/account, retry without it
-    // rather than failing the user's finance question completely.
-    if (useWeb) {
-      webSearchUsed = false;
-      delete params.web_search_options;
-      result = await env.AI.run("@cf/zai-org/glm-4.7-flash", params);
-    } else {
-      throw error;
+  let lastError = null;
+
+  for (const attempt of attempts) {
+    try {
+      const result = await runFinanceModel(env, attempt.model, messages, attempt.web);
+      const answer = extractText(result);
+      const sources = collectSources(result);
+
+      if (answer) {
+        return {
+          ok: true,
+          answer,
+          model: attempt.model,
+          marketGeneratedAt: market.generatedAt,
+          webSearchUsed: attempt.web,
+          sources
+        };
+      }
+
+      lastError = `No final text returned by ${attempt.model}`;
+      console.log("AI response had no extractable final text:", JSON.stringify({
+        model: attempt.model,
+        web: attempt.web,
+        keys: result && typeof result === "object" ? Object.keys(result) : typeof result,
+        choiceKeys: result?.choices?.[0] ? Object.keys(result.choices[0]) : [],
+        messageKeys: result?.choices?.[0]?.message ? Object.keys(result.choices[0].message) : []
+      }));
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      console.log("AI attempt failed:", attempt.model, attempt.web, lastError);
     }
   }
 
-  const answer = extractText(result);
-  const sources = collectSources(result);
-
-  if (!answer) {
-    console.log("Unrecognized Workers AI response shape:", JSON.stringify(result).slice(0, 4000));
-    return {
-      ok: false,
-      status: 502,
-      error: "The AI model responded, but its text could not be extracted. Check Worker logs for the response shape."
-    };
-  }
-
   return {
-    ok: true,
-    answer,
-    model: "@cf/zai-org/glm-4.7-flash",
-    marketGeneratedAt: market.generatedAt,
-    webSearchUsed,
-    sources
+    ok: false,
+    status: 502,
+    error: `Finance AI could not produce a final answer after multiple attempts. ${lastError || ""}`.trim()
   };
 }
 

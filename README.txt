@@ -1,13 +1,12 @@
-MoneyMantra 9 Market Intelligence — Finance AI Response + Web Search Fix
+MoneyMantra 9 Market Intelligence — Reliable Finance AI Build
 
 Fixes:
-- [object Object] AI response bug
-- robust Workers AI text extraction
-- removes irrelevant DuckDuckGo RelatedTopics context
-- built-in Workers AI web search for freshness-sensitive finance questions
-- automatic no-search fallback if web search is unavailable
-- clickable source links when Workers AI returns URL citations
-- latest MoneyMantra market payload remains part of AI context
+- switches primary Finance AI to Gemma 4 26B
+- disables model thinking for reliable final-answer output
+- robust response parser
+- built-in web search for current/latest finance questions
+- multi-model fallback chain
+- cleaner AI errors
+- existing market proxy, timeline, sectors and reports preserved
 
-Update the existing Cloudflare Worker with worker/src/index.js, then replace GitHub index.html.
-See AI_BUGFIX_SETUP.md.
+See AI_RELIABILITY_FIX.md.
