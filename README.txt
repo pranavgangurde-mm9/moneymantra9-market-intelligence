@@ -1,13 +1,13 @@
-MoneyMantra 9 Market Intelligence — Latest Closing Snapshot Correction
+MoneyMantra 9 Market Intelligence — Production Proxy Build
 
-Corrected verified 09 Oct 2026 closing snapshot:
-- Nifty 50: 22,520.45 (+1.30%)
-- Bank Nifty: 55,256.65 (+1.36%)
-- Sensex: 72,472.33 (+1.23%)
-- India VIX: 14.36 (-6.01%)
-- GIFT Nifty fallback snapshot: 22,605.50 (+1.08%)
-- Nifty close timestamp: 15:31 IST
+NEW:
+- Cloudflare Worker market-data proxy included under /worker
+- Frontend config.js added
+- One batched /api/market call instead of direct browser requests when proxy is configured
+- Global index data routed server-side through the Worker
+- India / US Markets session labels cleaned up (no duplicated flag text)
+- GIFT Nifty session timing corrected for current NSE IX Index Futures hours
+- GIFT status now distinguishes Session 1 / Pre-Close / Session 2 / Inter-session
+- Existing GitHub Pages repository can be updated in place
 
-After market close, today's final close is treated as the latest valid Indian cash-market data and is not penalized merely because several hours have passed.
-
-A working live-data endpoint is still required for dependable future intraday updates.
+See CLOUDFLARE_SETUP.md for deployment steps.

@@ -194,16 +194,16 @@ main{padding:12px}
  <div class="card">
   <h3>Market Session Monitor</h3>
   <div class="sessiongrid">
-   <div class="sessionbox clickable" onclick="openDetail('indiaSession')"><b>🇮🇳 India</b><span id="indiaSession">--</span></div>
+   <div class="sessionbox clickable" onclick="openDetail('indiaSession')"><b>India</b><span id="indiaSession">--</span></div>
    <div class="sessionbox clickable" onclick="openDetail('gift')"><b>GIFT Nifty</b><span id="giftSession">--</span></div>
-   <div class="sessionbox clickable" onclick="openDetail('global')"><b>🇺🇸 US</b><span id="usSession">--</span></div>
+   <div class="sessionbox clickable" onclick="openDetail('global')"><b>US Markets</b><span id="usSession">--</span></div>
   </div>
   <div class="ss" style="margin-top:8px">The app checks active market sources every 15 seconds. After the Indian cash market closes, its last successful snapshot is retained while eligible GIFT/global sources can continue updating. Each market keeps its own session status and timestamp.</div>
  </div>
 
  <div class="card">
   <h3>Global & Pre-Market Cues</h3>
-  <div class="signal"><div class="sl"><span id="giftDot" class="dot a"></span><div><div class="st">GIFT Nifty</div><div class="ss">Public source snapshot until a licensed feed is connected</div></div></div><div id="giftMarket" class="sv">--</div></div>
+  <div class="signal"><div class="sl"><span id="giftDot" class="dot a"></span><div><div class="st">GIFT Nifty</div><div class="ss">Last verified GIFT quote · session timing from NSE IX</div></div></div><div id="giftMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="nasdaqDot" class="dot b"></span><div><div class="st">Nasdaq Composite</div><div class="ss">US close / latest public quote</div></div></div><div id="nasdaqMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="spDot" class="dot b"></span><div><div class="st">S&P 500</div><div class="ss">US close / latest public quote</div></div></div><div id="spMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="nikkeiDot" class="dot b"></span><div><div class="st">Nikkei 225</div><div class="ss">Asian market cue</div></div></div><div id="nikkeiMarket" class="sv">--</div></div>
@@ -255,6 +255,7 @@ main{padding:12px}
 
  <div class="card">
   <h3>Data Source Centre</h3>
+  <div class="signal"><div><div class="st">Cloudflare Data Proxy</div><div class="ss" id="proxyStatus">Configure config.js with your workers.dev URL</div></div><span class="badge">PROXY</span></div>
   <a class="source-link" href="https://www.nseindia.com/" target="_blank"><div class="signal"><div><div class="st">NSE India</div><div class="ss">Official Indian exchange reference</div></div><span class="badge">OFFICIAL</span></div></a>
   <a class="source-link" href="https://www.nseix.com/" target="_blank"><div class="signal"><div><div class="st">NSE IX</div><div class="ss">Official GIFT Nifty reference</div></div><span class="badge">OFFICIAL</span></div></a>
   <a class="source-link" href="https://finance.yahoo.com/" target="_blank"><div class="signal"><div><div class="st">Public Quote Adapter</div><div class="ss">Browser refresh for index/time-series where available</div></div><span class="badge">WEB</span></div></a>
@@ -289,7 +290,9 @@ main{padding:12px}
 </nav>
 </div>
 
+<script src="config.js"></script>
 <script>
+const API_BASE=((window.MM9_CONFIG&&window.MM9_CONFIG.API_BASE)||"").replace(/\/$/,"");
 const IST='Asia/Kolkata';
 const FALLBACK_DATE='2026-10-09';
 const fallback={
@@ -395,10 +398,18 @@ function usSessionStatus(){
 }
 function giftSessionStatus(){
  const x=partsInZone(IST);
- // GIFT Nifty trading window is nearly 21 hours; this is a high-level session indicator.
- if(x.weekday==='Sun')return 'Closed';
- if(x.weekday==='Sat'&&x.mins>165)return 'Closed';
- if(x.mins>=390 || x.mins<=165)return 'Trading Window';
+ const d=x.weekday, m=x.mins;
+ // Session 2 continues past midnight into the next calendar day.
+ // Mon-Fri 16:05-23:59 and Tue-Sat 00:00-02:45.
+ const overnightAllowed=['Tue','Wed','Thu','Fri','Sat'].includes(d);
+ const daytimeAllowed=['Mon','Tue','Wed','Thu','Fri'].includes(d);
+ if(overnightAllowed && m<=165) return 'Session 2 · until 02:45';
+ if(!daytimeAllowed) return 'Closed';
+ if(m>=375 && m<385) return 'Pre-Open · Session 1';       // 06:15-06:25
+ if(m>=390 && m<940) return 'Session 1 · until 15:40';    // 06:30-15:40
+ if(m>=940 && m<955) return 'Pre-Close · Session 1';      // 15:40-15:55
+ if(m>=958 && m<963) return 'Pre-Open · Session 2';       // 15:58-16:03
+ if(m>=965) return 'Session 2 · until 02:45';             // 16:05 onward
  return 'Inter-session';
 }
 function dataAgeMinutes(){
@@ -572,6 +583,39 @@ function drawTrend(){
 function timeIST(epoch){
  return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000));
 }
+async function fetchProxyMarket(){
+ if(!API_BASE || API_BASE.includes('REPLACE-WITH-YOUR-WORKER')) return null;
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),12000);
+ try{
+   const r=await fetch(`${API_BASE}/api/market`,{
+     cache:'no-store',
+     signal:controller.signal,
+     headers:{'Accept':'application/json'}
+   });
+   if(!r.ok) throw new Error(`Proxy HTTP ${r.status}`);
+   const j=await r.json();
+   if(!j || !j.ok || !j.quotes) throw new Error('Invalid proxy response');
+   return j;
+ }finally{
+   clearTimeout(timer);
+ }
+}
+function normalizedFromProxy(q){
+ if(!q) return null;
+ return {
+   price:Number(q.price),
+   pct:Number(q.pct),
+   time:q.time||'',
+   prev:Number(q.prev),
+   open:Number(q.open),
+   high:Number(q.high),
+   low:Number(q.low),
+   epoch:Number(q.epoch)||null,
+   timeline:Array.isArray(q.timeline)?q.timeline:[]
+ };
+}
+
 async function fetchJsonWithTimeout(url, timeoutMs=8500){
  const controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -644,52 +688,68 @@ async function refreshAll(manual=false){
  refreshInFlight=true;
  const btn=document.getElementById('refreshBtn');
  btn.disabled=true;btn.classList.add('loading');
- document.getElementById('sourceMode').textContent=manual?'Manual refresh started':'Refreshing public sources';
+ document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing via Cloudflare Worker':'Refreshing public sources');
  let liveCount=0, routeNames=new Set(), hadAnyError=false;
  try{
+   let proxyPack=null;
+   try{ proxyPack=await fetchProxyMarket(); }catch(proxyErr){ proxyPack=null; }
    const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225'};
-   const results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
-   const got={};
-   results.forEach(x=>{
-     if(x.status==='fulfilled'){
-       got[x.value[0]]=x.value[1];
+   let results=[], got={};
+   if(proxyPack){
+     Object.entries(proxyPack.quotes).forEach(([k,q])=>{
+       got[k]={__proxyNormalized:q,__route:'Cloudflare Worker'};
        liveCount++;
-       if(x.value[1].__route)routeNames.add(x.value[1].__route);
-     }else hadAnyError=true;
-   });
+       routeNames.add('Cloudflare Worker');
+     });
+   }else{
+     results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
+   
+     results.forEach(x=>{
+       if(x.status==='fulfilled'){
+         got[x.value[0]]=x.value[1];
+         liveCount++;
+         if(x.value[1].__route)routeNames.add(x.value[1].__route);
+       }else hadAnyError=true;
+     });
+   }
    const updateIndian=indianSessionAllowsLiveUpdate();
    if(updateIndian){
      ['nifty','bank','sensex','vix'].forEach(k=>{
        if(got[k]){
-         const q=quoteFromChart(got[k]);
+         const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
          marketData[k]={price:q.price,pct:q.pct,source:'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
          if(q.epoch) marketData.asOfEpoch=q.epoch*1000;
        }
      });
      if(got.nifty){
-       const pts=timelineFromChart(got.nifty);
+       const pts=got.nifty.__proxyNormalized
+         ? (Array.isArray(got.nifty.__proxyNormalized.timeline)?got.nifty.__proxyNormalized.timeline:[])
+         : timelineFromChart(got.nifty);
        if(pts.length)timelinePoints=pts;
      }
    }
    if(got.nasdaq){
-     const q=quoteFromChart(got.nasdaq); marketData.global=marketData.global||{}; marketData.global.nasdaq=q;
+     const q=got.nasdaq.__proxyNormalized?normalizedFromProxy(got.nasdaq.__proxyNormalized):quoteFromChart(got.nasdaq); marketData.global=marketData.global||{}; marketData.global.nasdaq=q;
      document.getElementById('nasdaqMarket').textContent=fmtPct(q.pct);
      document.getElementById('nasdaqMarket').className='sv '+cls(q.pct);
      document.getElementById('nasdaqDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
    }
    if(got.sp){
-     const q=quoteFromChart(got.sp); marketData.global=marketData.global||{}; marketData.global.sp=q;
+     const q=got.sp.__proxyNormalized?normalizedFromProxy(got.sp.__proxyNormalized):quoteFromChart(got.sp); marketData.global=marketData.global||{}; marketData.global.sp=q;
      document.getElementById('spMarket').textContent=fmtPct(q.pct);
      document.getElementById('spMarket').className='sv '+cls(q.pct);
      document.getElementById('spDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
    }
    if(got.nikkei){
-     const q=quoteFromChart(got.nikkei); marketData.global=marketData.global||{}; marketData.global.nikkei=q;
+     const q=got.nikkei.__proxyNormalized?normalizedFromProxy(got.nikkei.__proxyNormalized):quoteFromChart(got.nikkei); marketData.global=marketData.global||{}; marketData.global.nikkei=q;
      document.getElementById('nikkeiMarket').textContent=fmtPct(q.pct);
      document.getElementById('nikkeiMarket').className='sv '+cls(q.pct);
      document.getElementById('nikkeiDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
    }
-   const globalPcts=['nasdaq','sp','nikkei'].filter(k=>got[k]).map(k=>quoteFromChart(got[k]).pct).filter(Number.isFinite);
+   const globalPcts=['nasdaq','sp','nikkei'].filter(k=>got[k]).map(k=>{
+     const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
+     return q.pct;
+   }).filter(Number.isFinite);
    if(globalPcts.length)marketData.globalAligned=globalPcts.reduce((a,b)=>a+b,0)>=0;
 
    if(liveCount>=3){
@@ -888,6 +948,8 @@ window.addEventListener('load',()=>{
    ? 'Indian market closed · final close retained'
    : 'Starting live refresh';
  setupAuto();
+ const ps=document.getElementById('proxyStatus');
+ if(ps) ps.textContent=API_BASE?`Connected: ${API_BASE}`:'Not configured yet';
  setTimeout(()=>refreshAll(false),250);
 });
 document.addEventListener('visibilitychange',()=>{
