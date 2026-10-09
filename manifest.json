@@ -1,0 +1,20 @@
+{
+  "name": "MoneyMantra 9 Market Intelligence",
+  "short_name": "MM9 Market",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F6F8F7",
+  "theme_color": "#10344B",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
