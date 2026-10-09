@@ -293,22 +293,22 @@ main{padding:12px}
 const IST='Asia/Kolkata';
 const FALLBACK_DATE='2026-10-09';
 const fallback={
-  timestamp:'09 Oct 2026 · 11:15 IST',
-  asOfEpoch:Date.parse('2026-10-09T11:15:00+05:30'),
-  mode:'Last verified web snapshot',
-  nifty:{price:22498.00,pct:1.20,source:'Downstox',prev:22231.80,low:22294.75,high:22534.40},
-  bank:{price:55115.40,pct:1.10,source:'Downstox',prev:54515.05,open:54746.25,low:54617.20,high:55247.00},
-  sensex:{price:72429.58,pct:1.17,source:'Downstox'},
-  vix:{price:14.70,pct:-3.80,source:'Downstox',prev:15.28,open:15.28,low:13.66,high:15.28},
-  gift:{price:22569.00,pct:0.92,source:'Downstox'},
+  timestamp:'09 Oct 2026 · 15:31 IST',
+  asOfEpoch:Date.parse('2026-10-09T15:31:00+05:30'),
+  mode:'Verified market close snapshot',
+  nifty:{price:22520.45,pct:1.30,source:'Verified closing sources',prev:22231.80,open:22314.95,low:22294.75,high:22580.75},
+  bank:{price:55256.65,pct:1.36,source:'Verified closing source',prev:54515.05,open:54746.25,low:54617.20,high:55256.65},
+  sensex:{price:72472.33,pct:1.23,source:'Verified closing sources',prev:71593.24},
+  vix:{price:14.36,pct:-6.01,source:'Verified closing source',prev:15.28,low:13.66,high:15.28},
+  gift:{price:22605.50,pct:1.08,source:'Verified closing source'},
   breadth:{adv:32,dec:18,time:'09:33 IST',source:'Economic Times'},
   sectors:[
-    ['IT',28620.65,3.19],['Pharma',25951.55,0.50],['Auto',24916.75,1.65],['FMCG',44645.80,1.70],
-    ['Metal',11980.00,0.93],['Realty',802.00,0.68],['Energy',35743.85,0.27],['PSU Bank',8095.45,1.24],
-    ['Financial Services',26769.20,1.16],['Infrastructure',8558.15,0.64],['Media',1550.90,1.07],['Banking',55115.40,1.10]
+    ['IT',28574.90,3.02],['Pharma',25962.05,0.54],['Auto',24859.90,1.42],['FMCG',44864.25,2.20],
+    ['Metal',12000.75,1.10],['Realty',803.95,0.92],['Energy',35786.50,0.38],['PSU Bank',8126.35,1.63],
+    ['Financial Services',26822.05,1.36],['Infrastructure',8574.45,0.83],['Media',1553.30,1.23],['Banking',55256.65,1.36]
   ],
   seedTimeline:[
-    {time:'09:15',pct:0.65},{time:'09:33',pct:0.67},{time:'11:15',pct:1.20}
+    {time:'09:15',pct:0.37},{time:'09:33',pct:0.58},{time:'11:15',pct:1.20},{time:'15:30',pct:1.30}
   ]
 };
 
@@ -406,7 +406,17 @@ function dataAgeMinutes(){
  if(!Number.isFinite(ep))return null;
  return Math.max(0,Math.round((Date.now()-ep)/60000));
 }
+function isFinalCloseSnapshot(){
+ if(!marketData||!marketData.mode)return false;
+ if(!marketData.mode.toLowerCase().includes('market close snapshot'))return false;
+ const ep=Number(marketData.asOfEpoch);
+ if(!Number.isFinite(ep))return false;
+ const snapDate=new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ep));
+ return snapDate===dateIST() && marketStatus()==='Closed';
+}
+
 function freshnessLabel(){
+ if(isFinalCloseSnapshot())return 'Final market close';
  const a=dataAgeMinutes();
  if(a==null)return 'Timestamp unavailable';
  if(a<=5)return 'Current';
@@ -435,7 +445,7 @@ function scoreModel(){
  const coverage=comps.length;
  let confidence=clamp(50+aligned*9+coverage*3+(lastSuccessfulMode==='live'?8:0),45,94);
  const age=dataAgeMinutes();
- if(age!=null){
+ if(age!=null && !isFinalCloseSnapshot()){
    if(age>120) confidence=Math.min(confidence,35);
    else if(age>60) confidence=Math.min(confidence,45);
    else if(age>30) confidence=Math.min(confidence,55);
@@ -474,7 +484,10 @@ function render(){
  document.getElementById('marketState').textContent=marketStatus()==='Closed'?'Closed · snapshot retained':marketStatus();
  const age=dataAgeMinutes();
  const stale=document.getElementById('staleNote');
- if(age!=null&&age>15){
+ if(isFinalCloseSnapshot()){
+   stale.style.display='block';
+   stale.innerHTML=`<b>Market close snapshot:</b> Indian cash-market values are final for today. Nifty 50, Bank Nifty, Sensex and India VIX will remain at their closing values until the next trading session. GIFT Nifty and global markets may continue to change separately.`;
+ }else if(age!=null&&age>15){
    stale.style.display='block';
    stale.innerHTML=`<b>Data update notice:</b> the latest verified market reading is from ${marketData.timestamp}. The app checked again recently, but a newer public-source update was unavailable. Confidence is automatically reduced until fresher data is received.`;
  }else stale.style.display='none';
@@ -491,8 +504,8 @@ function render(){
  setValue('vix',marketData.vix?.price,marketData.vix?.pct);
  setValue('gift',marketData.gift?.price,marketData.gift?.pct);
  document.getElementById('marketExplain').textContent=explanation(m);
- document.getElementById('dataTime').textContent='Data as of · '+(marketData.timestamp||'timestamp unavailable');
- document.getElementById('heroSource').textContent=lastSuccessfulMode==='live'?'PUBLIC WEB REFRESH':freshnessLabel().toUpperCase();
+ document.getElementById('dataTime').textContent=(isFinalCloseSnapshot()?'Market close · ':'Data as of · ')+(marketData.timestamp||'timestamp unavailable');
+ document.getElementById('heroSource').textContent=isFinalCloseSnapshot()?'FINAL CLOSE':(lastSuccessfulMode==='live'?'PUBLIC WEB REFRESH':freshnessLabel().toUpperCase());
  document.getElementById('marketPill').textContent='● '+marketStatus().toUpperCase();
  document.getElementById('radGift').textContent='GIFT '+icon(marketData.gift?.pct);
  document.getElementById('radPrice').textContent='PRICE '+icon(marketData.nifty?.pct);
@@ -872,7 +885,7 @@ window.addEventListener('load',()=>{
  render();
  document.getElementById('lastUpdate').textContent=restored?'Last market snapshot restored':'Source snapshot loaded';
  document.getElementById('sourceMode').textContent=marketStatus()==='Closed'
-   ? 'Indian market closed · last snapshot retained'
+   ? 'Indian market closed · final close retained'
    : 'Starting live refresh';
  setupAuto();
  setTimeout(()=>refreshAll(false),250);
