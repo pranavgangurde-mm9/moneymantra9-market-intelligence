@@ -160,8 +160,8 @@ main{padding:12px}
  </div>
 
  <div class="card">
-  <h3>Market Explanation</h3>
-  <div class="explain"><div style="font-size:18px">✦</div><div id="marketExplain">Refresh live data to build the current market explanation from available sources.</div></div>
+  <h3>Live-Data Market Explanation</h3>
+  <div class="explain"><div style="font-size:18px">✦</div><div><div id="marketExplain">Refresh live data to build the current market explanation from the Worker response.</div><div id="explainSource" class="ss" style="margin-top:6px"></div></div></div>
  </div>
 
  <div class="card">
@@ -227,21 +227,34 @@ main{padding:12px}
 
 <section id="ai" class="section">
  <div class="card">
-  <h3>AI Market Explainer</h3>
-  <div id="chat" class="chat"><div class="msg bot">Ask about market direction, India VIX, sector participation, Nifty/Bank Nifty confirmation or what the current market move may mean for a long-term SIP investor.</div></div>
-  <div class="chatrow"><input id="q" placeholder="Ask about the current market..." onkeydown="if(event.key==='Enter')askAI()"/><button class="btn primary" onclick="askAI()">Ask</button></div>
+  <h3>MoneyMantra 9 Finance AI</h3>
+  <div class="ss" id="aiStatus" style="margin-bottom:9px">Uses Cloudflare Workers AI when the AI binding is enabled. Current market questions include the latest proxy data automatically.</div>
+  <div id="chat" class="chat"><div class="msg bot">Ask me about markets, mutual funds, SIPs, insurance, personal finance, risk, asset allocation, financial concepts or the current market. For current-market questions I use the latest Worker market context; for general finance I answer educationally.</div></div>
+  <div class="chatrow"><input id="q" placeholder="Ask any finance question..." onkeydown="if(event.key==='Enter')askAI()"/><button id="askBtn" class="btn primary" onclick="askAI()">Ask</button></div>
  </div>
- <div class="card"><h3>Quick Questions</h3><div style="display:flex;flex-wrap:wrap;gap:7px"><button class="btn soft" onclick="quick('Why is the market moving today?')">Why moving?</button><button class="btn soft" onclick="quick('What does the VIX mean now?')">VIX</button><button class="btn soft" onclick="quick('Is Bank Nifty confirming the move?')">Bank confirmation</button><button class="btn soft" onclick="quick('What does today mean for SIP investors?')">SIP impact</button></div></div>
+ <div class="card"><h3>Quick Questions</h3><div style="display:flex;flex-wrap:wrap;gap:7px">
+   <button class="btn soft" onclick="quick('Why did Nifty move today?')">Today’s Nifty</button>
+   <button class="btn soft" onclick="quick('Explain India VIX in simple terms and relate it to today\'s reading.')">Explain VIX</button>
+   <button class="btn soft" onclick="quick('What is the difference between SIP and lump-sum investing?')">SIP vs lump sum</button>
+   <button class="btn soft" onclick="quick('How should a beginner think about emergency funds, insurance and investing?')">Finance basics</button>
+ </div></div>
 </section>
 
 <section id="investor" class="section">
  <div class="card">
-  <div class="smallcaps">Investor Mode</div><h3 style="font-size:18px;margin-top:5px">What does the current move mean for me?</h3>
-  <div class="alert green"><b>SIP Investor</b><br/>Use the market pulse to understand context, but keep long-term SIP decisions tied to goals, horizon and asset allocation rather than one session.</div>
-  <div class="alert amber"><b>Lump-Sum Investor</b><br/>A phased allocation can reduce timing risk when volatility is elevated. Market direction alone should not replace suitability and allocation checks.</div>
-  <div class="alert red"><b>Retirement / Withdrawal</b><br/>Focus on liquidity, withdrawal sustainability and asset mix. Intraday movement is secondary to sequence-of-return risk and cash-flow planning.</div>
+  <div class="smallcaps">Investor Mode</div><h3 style="font-size:18px;margin-top:5px">What does the current market context mean?</h3>
+  <div class="alert green"><b>SIP Investor</b><br/><span id="sipInsight">Refresh market data to generate a context-aware SIP perspective.</span></div>
+  <div class="alert amber"><b>Lump-Sum Investor</b><br/><span id="lumpInsight">Refresh market data to generate a context-aware lump-sum perspective.</span></div>
+  <div class="alert red"><b>Retirement / Withdrawal</b><br/><span id="retireInsight">Refresh market data to generate a context-aware retirement perspective.</span></div>
  </div>
- <div class="card"><h3>Market Report Generator</h3><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px"><button class="btn primary" onclick="generateReport('current')">Current Brief</button><button class="btn soft" onclick="generateReport('close')">Closing Format</button></div><div id="reportBox" class="reportbox">Refresh market data, then generate a summary.</div></div>
+ <div class="card">
+   <h3>Market Report Generator</h3>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px">
+     <button class="btn primary" onclick="generateReport('current')">Current Brief</button>
+     <button class="btn soft" onclick="generateReport('close')">Closing Report</button>
+   </div>
+   <div id="reportBox" class="reportbox">Refresh market data, then choose the report you need.</div>
+ </div>
 </section>
 
 <section id="more" class="section">
@@ -475,16 +488,75 @@ function setValue(id,price,pct){
  if(v){v.textContent=fmtNum(price);v.className='v '+cls(pct)}
  if(p){p.textContent=fmtPct(pct);p.className='s '+cls(pct)}
 }
+function trendStats(){
+ const pts=(timelinePoints||[]).filter(p=>Number.isFinite(Number(p.pct))).slice().sort((a,b)=>a.time.localeCompare(b.time));
+ if(!pts.length)return null;
+ const vals=pts.map(p=>Number(p.pct));
+ const hi=Math.max(...vals),lo=Math.min(...vals),first=vals[0],last=vals[vals.length-1];
+ return {first,last,hi,lo,points:pts.length,start:pts[0].time,end:pts[pts.length-1].time};
+}
+function sectorStats(){
+ const s=(marketData.sectors||[]).filter(x=>Number.isFinite(Number(x[2])));
+ if(!s.length)return null;
+ const sorted=s.slice().sort((a,b)=>Number(b[2])-Number(a[2]));
+ return {
+   total:s.length,
+   positive:s.filter(x=>Number(x[2])>0).length,
+   negative:s.filter(x=>Number(x[2])<0).length,
+   top:sorted.slice(0,3),
+   weak:sorted.slice(-2).reverse()
+ };
+}
+function globalStats(){
+ const g=marketData.global||{};
+ const rows=[
+   ['Nasdaq',g.nasdaq?.pct],['S&P 500',g.sp?.pct],['Nikkei',g.nikkei?.pct]
+ ].filter(x=>Number.isFinite(Number(x[1])));
+ if(!rows.length)return null;
+ return {rows,avg:rows.reduce((a,x)=>a+Number(x[1]),0)/rows.length};
+}
 function explanation(model){
- const bits=[];
- if(Number.isFinite(marketData.nifty?.pct))bits.push(`Nifty 50 is ${marketData.nifty.pct>=0?'up':'down'} ${Math.abs(marketData.nifty.pct).toFixed(2)}%.`);
- if(Number.isFinite(marketData.bank?.pct))bits.push(`Bank Nifty is ${marketData.bank.pct>=0?'confirming strength':'showing weakness'} at ${fmtPct(marketData.bank.pct)}.`);
- if(Number.isFinite(marketData.vix?.price))bits.push(`India VIX is ${marketData.vix.price.toFixed(2)}, which the model classifies as ${model.vol.toLowerCase()} volatility.`);
- if(marketData.sectors?.length){
-   const pos=marketData.sectors.filter(x=>x[2]>0).length;
-   bits.push(`${pos} of ${marketData.sectors.length} tracked sectors are positive in the latest available sector snapshot.`);
+ const parts=[];
+ const n=marketData.nifty||{},b=marketData.bank||{},s=marketData.sensex||{},v=marketData.vix||{};
+ if(Number.isFinite(n.pct)){
+   parts.push(`Nifty 50 is ${n.pct>=0?'higher':'lower'} by ${Math.abs(n.pct).toFixed(2)}% at ${fmtNum(n.price)}.`);
  }
- return bits.join(' ');
+ if(Number.isFinite(b.pct)&&Number.isFinite(n.pct)){
+   const same=Math.sign(b.pct)===Math.sign(n.pct);
+   const rel=Math.abs(b.pct)-Math.abs(n.pct);
+   parts.push(same
+     ? `Bank Nifty is moving in the same direction at ${fmtPct(b.pct)}${Math.abs(rel)>=0.25?`, ${rel>0?'outperforming':'lagging'} Nifty`:''}, which ${same?'supports':'does not support'} the index move.`
+     : `Bank Nifty is diverging at ${fmtPct(b.pct)}, so financials are not confirming the Nifty move.`);
+ }
+ if(Number.isFinite(s.pct)&&Number.isFinite(n.pct)){
+   parts.push(Math.sign(s.pct)===Math.sign(n.pct)
+     ? `Sensex is aligned at ${fmtPct(s.pct)}, adding a second large-cap confirmation.`
+     : `Sensex is diverging at ${fmtPct(s.pct)}, so large-cap confirmation is mixed.`);
+ }
+ if(Number.isFinite(v.price)){
+   if(Number.isFinite(v.pct)){
+     parts.push(`India VIX is ${fmtNum(v.price)} (${fmtPct(v.pct)}); volatility expectations are ${v.pct<0?'easing':'rising'} versus the previous session.`);
+   }else parts.push(`India VIX is ${fmtNum(v.price)}, classified as ${model.vol.toLowerCase()} volatility by the dashboard.`);
+ }
+ const ts=trendStats();
+ if(ts&&ts.points>=2){
+   const delta=ts.last-ts.first;
+   parts.push(`Intraday data contains ${ts.points} points from ${ts.start} to ${ts.end}; the session moved from ${fmtPct(ts.first)} to ${fmtPct(ts.last)}, with an intraday range of ${fmtPct(ts.lo)} to ${fmtPct(ts.hi)} versus the previous close.`);
+   if(Math.abs(delta)>=0.25) parts.push(delta>0?'Momentum strengthened through the session.':'The market gave back part of its earlier move through the session.');
+ }
+ const ss=sectorStats();
+ if(ss){
+   const leaders=ss.top.filter(x=>x[2]>0).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', ');
+   const laggards=ss.weak.filter(x=>x[2]<0).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', ');
+   parts.push(`${ss.positive} of ${ss.total} live sector indices are positive${leaders?`; leaders include ${leaders}`:''}${laggards?`; weaker sectors include ${laggards}`:''}.`);
+ }
+ const gs=globalStats();
+ if(gs){
+   const sign=gs.avg>0.15?'positive':gs.avg<-0.15?'negative':'mixed/flat';
+   parts.push(`Available global cues are ${sign}: ${gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', ')}.`);
+ }
+ parts.push(`Composite Market Pulse: ${model.state} ${model.score>0?'+':''}${model.score}, confidence ${model.confidence}%.`);
+ return parts.join(' ');
 }
 function render(){
  const m=scoreModel();
@@ -515,6 +587,8 @@ function render(){
  setValue('vix',marketData.vix?.price,marketData.vix?.pct);
  setValue('gift',marketData.gift?.price,marketData.gift?.pct);
  document.getElementById('marketExplain').textContent=explanation(m);
+ const es=document.getElementById('explainSource');
+ if(es) es.textContent=`Calculated from ${marketData.mode||'available market data'} · ${marketData.timestamp||'timestamp unavailable'}`;
  document.getElementById('dataTime').textContent=(isFinalCloseSnapshot()?'Market close · ':'Data as of · ')+(marketData.timestamp||'timestamp unavailable');
  document.getElementById('heroSource').textContent=isFinalCloseSnapshot()?'FINAL CLOSE':(lastSuccessfulMode==='live'?'PUBLIC WEB REFRESH':freshnessLabel().toUpperCase());
  document.getElementById('marketPill').textContent='● '+marketStatus().toUpperCase();
@@ -532,6 +606,29 @@ function render(){
  document.getElementById('breadthStamp').textContent=marketData.breadth?`Latest available breadth source: ${marketData.breadth.source} · ${marketData.breadth.time}`:'Breadth source unavailable';
  renderSectors();
  renderTimeline();
+ renderInvestorInsights();
+}
+function renderInvestorInsights(){
+ const m=scoreModel(), vol=m.vol;
+ const sip=document.getElementById('sipInsight'), lump=document.getElementById('lumpInsight'), ret=document.getElementById('retireInsight');
+ if(!sip||!lump||!ret)return;
+ if(vol==='HIGH'||vol==='EXTREME'){
+   sip.textContent='Volatility is high. For a long-horizon SIP, consistency generally matters more than trying to time one volatile session; review asset allocation rather than stopping solely because of today’s move.';
+   lump.textContent='With elevated volatility, a large lump sum has higher timing risk. A phased allocation can reduce entry-point dependence, subject to your goal, horizon and suitability.';
+   ret.textContent='High volatility increases sequence-of-return risk. Prioritize near-term liquidity, planned withdrawals and an appropriate debt/equity mix before reacting to the market direction.';
+ }else if(m.score>=35){
+   sip.textContent='The market structure is positive. A disciplined SIP can continue according to the financial goal; avoid increasing risk merely because the market is strong today.';
+   lump.textContent='A positive market can tempt investors to chase momentum. For a large allocation, check valuation, horizon and asset mix; phasing remains an option where timing risk matters.';
+   ret.textContent='A positive session does not remove retirement risk. Keep withdrawal liquidity and rebalancing rules ahead of short-term market optimism.';
+ }else if(m.score<=-35){
+   sip.textContent='The market structure is weak. For a long-term SIP, a down session alone is generally not a reason to stop; confirm that the goal, horizon and risk capacity remain unchanged.';
+   lump.textContent='Weak markets may offer lower entry levels, but direction alone is not a valuation signal. Consider phased deployment and diversification rather than an all-at-once reaction.';
+   ret.textContent='During a weak market, avoid funding near-term withdrawals by forced equity selling where possible; liquidity planning and asset allocation become especially important.';
+ }else{
+   sip.textContent='The market is mixed/neutral. Continue to judge a SIP by the goal and time horizon rather than waiting for a perfect short-term signal.';
+   lump.textContent='With mixed signals, phasing a large investment can reduce timing dependence while you maintain the intended strategic asset allocation.';
+   ret.textContent='Mixed markets reinforce the importance of cash-flow planning, liquidity and rebalancing instead of short-term index forecasts.';
+ }
 }
 function renderSectors(){
  const el=document.getElementById('sectorList');el.innerHTML='';
@@ -539,7 +636,7 @@ function renderSectors(){
   const row=document.createElement('div');row.className='sector clickable';row.onclick=()=>openDetail('sector',s[0]);
   row.innerHTML=`<b>${s[0]}</b><span class="${cls(s[2])}">${fmtPct(s[2])}</span><span>${icon(s[2])}</span>`;el.appendChild(row);
  });
- document.getElementById('sectorStamp').textContent=marketData.timestamp?`Latest available sector snapshot · ${marketData.timestamp}`:'Sector timestamp unavailable';
+ document.getElementById('sectorStamp').textContent=marketData.timestamp?`Sector source: ${marketData.sectorSource||'latest available snapshot'} · ${marketData.timestamp}`:'Sector timestamp unavailable';
 }
 function timelineSlots(){
  const out=[];let h=9,m=15;
@@ -701,6 +798,12 @@ async function refreshAll(manual=false){
        liveCount++;
        routeNames.add('Cloudflare Worker');
      });
+     if(Array.isArray(proxyPack.sectors)&&proxyPack.sectors.length){
+       marketData.sectors=proxyPack.sectors
+         .filter(s=>Number.isFinite(Number(s.price))&&Number.isFinite(Number(s.pct)))
+         .map(s=>[s.name,Number(s.price),Number(s.pct)]);
+       marketData.sectorSource='Cloudflare Worker';
+     }
    }else{
      results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
    
@@ -712,21 +815,33 @@ async function refreshAll(manual=false){
        }else hadAnyError=true;
      });
    }
-   const updateIndian=indianSessionAllowsLiveUpdate();
-   if(updateIndian){
-     ['nifty','bank','sensex','vix'].forEach(k=>{
-       if(got[k]){
-         const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
-         marketData[k]={price:q.price,pct:q.pct,source:'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
-         if(q.epoch) marketData.asOfEpoch=q.epoch*1000;
+   let latestIndianEpoch=null;
+   ['nifty','bank','sensex','vix'].forEach(k=>{
+     if(got[k]){
+       const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
+       marketData[k]={price:q.price,pct:q.pct,source:got[k].__proxyNormalized?'Cloudflare Worker':'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
+       if(q.epoch){
+         latestIndianEpoch=Math.max(latestIndianEpoch||0,Number(q.epoch));
+         marketData.asOfEpoch=Number(q.epoch)*1000;
        }
-     });
-     if(got.nifty){
-       const pts=got.nifty.__proxyNormalized
-         ? (Array.isArray(got.nifty.__proxyNormalized.timeline)?got.nifty.__proxyNormalized.timeline:[])
-         : timelineFromChart(got.nifty);
-       if(pts.length)timelinePoints=pts;
      }
+   });
+   if(got.nifty){
+     const pts=got.nifty.__proxyNormalized
+       ? (Array.isArray(got.nifty.__proxyNormalized.timeline)?got.nifty.__proxyNormalized.timeline:[])
+       : timelineFromChart(got.nifty);
+     if(pts.length){
+       timelinePoints=pts;
+       localStorage.setItem('mm9Trend',JSON.stringify(pts.slice(-200)));
+     }
+   }
+   if(latestIndianEpoch){
+     const d=new Date(latestIndianEpoch*1000);
+     const datePart=new Intl.DateTimeFormat('en-GB',{timeZone:IST,day:'2-digit',month:'short',year:'numeric'}).format(d);
+     const timePart=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
+     marketData.timestamp=`${datePart} · ${timePart} IST`;
+     marketData.asOfEpoch=latestIndianEpoch*1000;
+     marketData.mode=proxyPack?'Cloudflare Worker market data':'Public web market data';
    }
    if(got.nasdaq){
      const q=got.nasdaq.__proxyNormalized?normalizedFromProxy(got.nasdaq.__proxyNormalized):quoteFromChart(got.nasdaq); marketData.global=marketData.global||{}; marketData.global.nasdaq=q;
@@ -760,9 +875,9 @@ async function refreshAll(manual=false){
         marketData.mode='Public web refresh';
       }
       const routes=[...routeNames].join(' + ');
-      document.getElementById('sourceMode').textContent=indianSessionAllowsLiveUpdate()
-        ? `${liveCount} sources refreshed${routes?' · '+routes:''}`
-        : `Indian close snapshot retained · ${liveCount} global sources checked`;
+      document.getElementById('sourceMode').textContent=proxyPack
+        ? `${liveCount} market sources refreshed via Cloudflare Worker`
+        : `${liveCount} sources refreshed${routes?' · '+routes:''}`;
    }else if(liveCount>0){
       lastSuccessfulMode='live';
       if(indianSessionAllowsLiveUpdate()){
@@ -770,9 +885,9 @@ async function refreshAll(manual=false){
         marketData.asOfEpoch=Date.now();
         marketData.mode='Partial public web refresh';
       }
-      document.getElementById('sourceMode').textContent=indianSessionAllowsLiveUpdate()
-        ? `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`
-        : `Indian close snapshot retained · global source checked`;
+      document.getElementById('sourceMode').textContent=proxyPack
+        ? `Partial Cloudflare refresh: ${liveCount} source${liveCount===1?'':'s'}`
+        : `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`;
    }else{
       lastSuccessfulMode='fallback';
       document.getElementById('sourceMode').textContent='Live fetch blocked · verified snapshot retained';
@@ -782,7 +897,7 @@ async function refreshAll(manual=false){
    document.getElementById('sourceMode').textContent='Live fetch blocked · verified snapshot retained';
  }finally{
    saveCurrentPoint();
-   if(indianSessionAllowsLiveUpdate() && liveCount>0) saveIndianSnapshot();
+   if(liveCount>0) saveIndianSnapshot();
    const completed=new Date();
    lastRefreshCompletedAt=completed.getTime();
    document.getElementById('lastUpdate').textContent='Checked '+nowIST();
@@ -875,21 +990,109 @@ function openDetail(type,arg){
 }
 
 function quick(x){document.getElementById('q').value=x;askAI()}
-function askAI(){
- const q=document.getElementById('q'),chat=document.getElementById('chat'),text=q.value.trim();if(!text)return;
+async function askAI(){
+ const q=document.getElementById('q'),chat=document.getElementById('chat'),btn=document.getElementById('askBtn');
+ const text=q.value.trim();if(!text)return;
  const u=document.createElement('div');u.className='msg user';u.textContent=text;chat.appendChild(u);
- const l=text.toLowerCase(),m=scoreModel();let ans='';
- if(l.includes('vix'))ans=`India VIX is ${marketData.vix?.price??'unavailable'} and the dashboard currently classifies volatility as ${m.vol}. VIX is used as a volatility input, not as a direct bullish/bearish signal.`;
- else if(l.includes('bank'))ans=`Bank Nifty is ${fmtPct(marketData.bank?.pct)} versus Nifty 50 at ${fmtPct(marketData.nifty?.pct)}. ${Math.sign(marketData.bank?.pct||0)===Math.sign(marketData.nifty?.pct||0)?'They are currently moving in the same direction, which supports confirmation.':'They are not fully aligned, so conviction should be lower.'}`;
- else if(l.includes('sip'))ans='For a long-term SIP investor, today’s market direction is useful context but should not by itself interrupt a goal-based SIP. Review horizon, allocation, valuation and risk capacity instead of reacting to one session.';
- else if(l.includes('why')||l.includes('moving')||l.includes('market'))ans=explanation(m);
- else if(l.includes('buy')||l.includes('sell')||l.includes('option'))ans='I can explain market direction, volatility and participation, but I do not issue personalized buy/sell or options calls.';
- else ans=`Current Market Pulse is ${m.state} at ${m.score>0?'+':''}${m.score}, with ${m.confidence}% confidence and ${m.vol.toLowerCase()} volatility.`;
- const b=document.createElement('div');b.className='msg bot';b.textContent=ans;chat.appendChild(b);q.value='';chat.scrollTop=chat.scrollHeight;
+ q.value='';btn.disabled=true;btn.textContent='Thinking…';
+ const wait=document.createElement('div');wait.className='msg bot';wait.textContent='Checking finance and current market context…';chat.appendChild(wait);chat.scrollTop=chat.scrollHeight;
+ try{
+   if(!API_BASE) throw new Error('Cloudflare proxy is not configured.');
+   const r=await fetch(`${API_BASE}/api/ask`,{
+     method:'POST',
+     headers:{'Content-Type':'application/json','Accept':'application/json'},
+     body:JSON.stringify({question:text})
+   });
+   const j=await r.json();
+   if(!r.ok||!j.ok) throw new Error(j.error||'Finance AI request failed.');
+   wait.textContent=j.answer||'No answer returned.';
+   if(Array.isArray(j.sources)&&j.sources.length){
+     const src=document.createElement('div');src.className='ss';src.style.margin='4px 0 8px 4px';
+     src.textContent='Web context: '+j.sources.map(s=>s.title||s.url).join(' · ');
+     chat.appendChild(src);
+   }
+   const st=document.getElementById('aiStatus');
+   if(st) st.textContent=`Finance AI connected · ${j.model||'Cloudflare Workers AI'} · live market context included`;
+ }catch(e){
+   const m=scoreModel();
+   wait.textContent=`Finance AI is not fully enabled yet. Market-only fallback: ${explanation(m)} Error: ${e.message}`;
+   const st=document.getElementById('aiStatus');
+   if(st) st.textContent='Add the Workers AI binding named AI in Cloudflare to enable open-ended finance questions.';
+ }
+ btn.disabled=false;btn.textContent='Ask';chat.scrollTop=chat.scrollHeight;
+}
+function currentBrief(){
+ const m=scoreModel(), ss=sectorStats(), gs=globalStats(), ts=trendStats();
+ const leaders=ss?ss.top.slice(0,3).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const global=gs?gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', '):'Not available';
+ return `MONEYMANTRA 9 · CURRENT MARKET BRIEF
+
+Data as of: ${marketData.timestamp||'Unavailable'}
+Market session: ${marketStatus()}
+Market Pulse: ${m.state} ${m.score>0?'+':''}${m.score}
+Confidence: ${m.confidence}%
+Volatility: ${m.vol}
+
+Nifty 50: ${fmtNum(marketData.nifty?.price)} (${fmtPct(marketData.nifty?.pct)})
+Bank Nifty: ${fmtNum(marketData.bank?.price)} (${fmtPct(marketData.bank?.pct)})
+Sensex: ${fmtNum(marketData.sensex?.price)} (${fmtPct(marketData.sensex?.pct)})
+India VIX: ${fmtNum(marketData.vix?.price)} (${fmtPct(marketData.vix?.pct)})
+GIFT Nifty: ${fmtNum(marketData.gift?.price)} (${fmtPct(marketData.gift?.pct)})
+
+Sector leaders: ${leaders}
+Global cues: ${global}
+${ts?`Intraday trend: ${ts.start} ${fmtPct(ts.first)} → ${ts.end} ${fmtPct(ts.last)}; range ${fmtPct(ts.lo)} to ${fmtPct(ts.hi)}.`:''}
+
+Interpretation:
+${explanation(m)}
+
+Investor note:
+Use this as market context, not as a personalized buy/sell instruction.`;
+}
+function closingReport(){
+ const m=scoreModel(),ss=sectorStats(),gs=globalStats(),ts=trendStats();
+ const n=marketData.nifty||{},b=marketData.bank||{},s=marketData.sensex||{},v=marketData.vix||{};
+ const leaders=ss?ss.top.slice(0,3).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const weak=ss?ss.weak.map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const global=gs?gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', '):'Not available';
+ const title=marketStatus()==='Closed'?'CLOSING MARKET REPORT':'CLOSING REPORT FORMAT · MARKET STILL OPEN';
+ return `MONEYMANTRA 9 · ${title}
+
+Trading-date data: ${marketData.timestamp||'Unavailable'}
+
+INDIAN MARKET CLOSE / LATEST
+Nifty 50: ${fmtNum(n.price)} (${fmtPct(n.pct)})
+  Open: ${fmtNum(n.open)} | High: ${fmtNum(n.high)} | Low: ${fmtNum(n.low)} | Prev: ${fmtNum(n.prev)}
+Bank Nifty: ${fmtNum(b.price)} (${fmtPct(b.pct)})
+Sensex: ${fmtNum(s.price)} (${fmtPct(s.pct)})
+India VIX: ${fmtNum(v.price)} (${fmtPct(v.pct)})
+
+SESSION SHAPE
+${ts?`Timeline points: ${ts.points}
+Opening reading: ${fmtPct(ts.first)}
+Closing/latest reading: ${fmtPct(ts.last)}
+Intraday strongest reading: ${fmtPct(ts.hi)}
+Intraday weakest reading: ${fmtPct(ts.lo)}`:'Intraday timeline unavailable.'}
+
+SECTOR PARTICIPATION
+Positive sectors: ${ss?`${ss.positive}/${ss.total}`:'Unavailable'}
+Leaders: ${leaders}
+Weakest: ${weak}
+
+GLOBAL CONTEXT
+${global}
+
+FINAL MARKET PULSE
+${m.state} ${m.score>0?'+':''}${m.score} · Confidence ${m.confidence}% · Volatility ${m.vol}
+
+Closing interpretation:
+${explanation(m)}
+
+This report is an educational market summary and not a personalized investment recommendation.`;
 }
 function generateReport(mode){
- const m=scoreModel();const box=document.getElementById('reportBox');
- box.textContent=`MONEYMANTRA 9 MARKET INTELLIGENCE\n\nMarket Pulse: ${m.state} ${m.score>0?'+':''}${m.score}\nConfidence: ${m.confidence}%\nVolatility: ${m.vol}\nNifty 50: ${fmtNum(marketData.nifty?.price)} (${fmtPct(marketData.nifty?.pct)})\nBank Nifty: ${fmtNum(marketData.bank?.price)} (${fmtPct(marketData.bank?.pct)})\nIndia VIX: ${fmtNum(marketData.vix?.price)} (${fmtPct(marketData.vix?.pct)})\n\nInterpretation:\n${explanation(m)}\n\nData status: ${marketData.mode||'Public source snapshot'}\nTimestamp: ${marketData.timestamp||'Unavailable'}\n\nInvestor perspective:\nUse this market information as context. Investment decisions should remain linked to goals, time horizon, risk capacity and suitable asset allocation.`;
+ const box=document.getElementById('reportBox');
+ box.textContent=mode==='close'?closingReport():currentBrief();
 }
 function toggleAuto(){
  autoRefresh=!autoRefresh;

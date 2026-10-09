@@ -1,13 +1,14 @@
-MoneyMantra 9 Market Intelligence — Production Proxy Build
+MoneyMantra 9 Market Intelligence — Production AI & Timeline Build
 
-NEW:
-- Cloudflare Worker market-data proxy included under /worker
-- Frontend config.js added
-- One batched /api/market call instead of direct browser requests when proxy is configured
-- Global index data routed server-side through the Worker
-- India / US Markets session labels cleaned up (no duplicated flag text)
-- GIFT Nifty session timing corrected for current NSE IX Index Futures hours
-- GIFT status now distinguishes Session 1 / Pre-Close / Session 2 / Inter-session
-- Existing GitHub Pages repository can be updated in place
+Major fixes:
+- Genuine live-data market explanation.
+- Full Nifty 09:15–15:30 timeline from Cloudflare Worker.
+- Corrected previous-close priority in Worker percentage calculations.
+- Live Indian sector index retrieval through Worker (when upstream symbols are available).
+- Open-ended Finance AI via Cloudflare Workers AI binding.
+- Current market context automatically supplied to Finance AI.
+- Optional public web context retrieval for general finance questions.
+- Dynamic Investor Mode.
+- Separate Current Brief and Closing Report.
 
-See CLOUDFLARE_SETUP.md for deployment steps.
+See PRODUCTION_AI_SETUP.md.
