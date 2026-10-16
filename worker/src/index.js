@@ -22,6 +22,92 @@ const SECTOR_SYMBOLS = {
   "Media": "^CNXMEDIA"
 };
 
+
+const SECTOR_META = {
+  "IT": {
+    slug: "nifty-it",
+    scope: "Nifty IT captures the performance of Indian information-technology companies and serves as a benchmark for the domestic IT segment.",
+    drivers: "Global technology spending, US/Europe demand, large deal wins, INR/USD, attrition and employee costs."
+  },
+  "Auto": {
+    slug: "nifty-auto",
+    scope: "Nifty Auto reflects the behaviour and performance of listed Indian automobile-sector companies.",
+    drivers: "Vehicle demand, interest rates, rural/urban consumption, fuel prices and commodity input costs."
+  },
+  "Pharma": {
+    slug: "nifty-pharma",
+    scope: "Nifty Pharma tracks listed Indian pharmaceutical companies and is used as a benchmark for the domestic pharma segment.",
+    drivers: "USFDA developments, drug approvals, product launches, export demand, pricing and currency movement."
+  },
+  "FMCG": {
+    slug: "nifty-fmcg",
+    scope: "Nifty FMCG tracks Indian fast-moving consumer-goods companies selling frequently purchased consumer products.",
+    drivers: "Rural/urban demand, food and commodity inflation, input costs, pricing power and consumer sentiment."
+  },
+  "Metal": {
+    slug: "nifty-metal",
+    scope: "Nifty Metal represents Indian companies involved in metals and mining-related businesses.",
+    drivers: "Steel/non-ferrous prices, China demand, domestic infrastructure demand, energy costs and currency."
+  },
+  "Realty": {
+    slug: "nifty-realty",
+    scope: "Nifty Realty represents listed Indian companies linked to real-estate development.",
+    drivers: "Home-loan rates, housing demand, project launches, liquidity, urban demand and regulation."
+  },
+  "Energy": {
+    slug: "",
+    scope: "The Energy signal represents listed Indian companies linked to the energy value chain.",
+    drivers: "Crude oil, gas and power prices, refining margins, demand, regulation and global energy markets."
+  },
+  "PSU Bank": {
+    slug: "nifty-psu-bank",
+    scope: "Nifty PSU Bank tracks listed Indian public-sector banks.",
+    drivers: "Credit growth, deposits, bond yields, asset quality, policy rates and government actions."
+  },
+  "Financial Services": {
+    slug: "nifty-financial-services",
+    scope: "Nifty Financial Services represents listed Indian financial-services companies across lending and related activities.",
+    drivers: "Interest rates, liquidity, credit growth, asset quality, market activity and regulation."
+  },
+  "Infrastructure": {
+    slug: "",
+    scope: "The Infrastructure signal represents listed Indian companies exposed to infrastructure and capital-expenditure activity.",
+    drivers: "Government/private capex, order books, project awards, financing costs and execution."
+  },
+  "Media": {
+    slug: "nifty-media",
+    scope: "Nifty Media represents Indian media and entertainment companies.",
+    drivers: "Advertising demand, subscriptions, content economics, consumer spending and regulation."
+  },
+  "Banking": {
+    slug: "nifty-bank",
+    scope: "Nifty Bank tracks major liquid Indian banking stocks and is a key gauge of the domestic banking sector.",
+    drivers: "Credit growth, deposits, net interest margins, asset quality, policy rates and liquidity."
+  }
+};
+
+function sectorSymbol(name) {
+  if (name === "Banking") return "^NSEBANK";
+  return SECTOR_SYMBOLS[name] || null;
+}
+
+function officialSectorLink(name) {
+  const slug = SECTOR_META[name]?.slug;
+  return slug
+    ? `https://www.niftyindices.com/indices/equity/sectoral-indices/${slug}`
+    : "https://www.niftyindices.com/indices/equity/sectoral-indices";
+}
+
+function quoteLink(symbol) {
+  return `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/`;
+}
+
+function rangeReturn(result) {
+  const closes = (result?.indicators?.quote?.[0]?.close || []).map(num).filter(v => v !== null);
+  if (closes.length < 2 || closes[0] === 0) return null;
+  return ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100;
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -46,10 +132,10 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-async function fetchYahooChart(symbol) {
+async function fetchYahooChart(symbol, interval = "5m", range = "1d") {
   const target =
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?interval=5m&range=1d&includePrePost=false`;
+    `?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}&includePrePost=false`;
 
   const r = await fetch(target, {
     headers: {
@@ -128,6 +214,166 @@ function normalizeChart(result, includeTimeline = false) {
   }
 
   return out;
+}
+
+
+async function buildSectorPayload(name) {
+  const symbol = sectorSymbol(name);
+  if (!symbol) return { ok: false, error: "Unknown sector." };
+
+  const [dayR, fiveR, monthR] = await Promise.allSettled([
+    fetchYahooChart(symbol, "5m", "1d"),
+    fetchYahooChart(symbol, "15m", "5d"),
+    fetchYahooChart(symbol, "1d", "1mo")
+  ]);
+
+  if (dayR.status !== "fulfilled") {
+    return { ok: false, error: dayR.reason?.message || "Sector quote unavailable." };
+  }
+
+  const sector = normalizeChart(dayR.value, true);
+  sector.name = name;
+  sector.symbol = symbol;
+
+  const meta = SECTOR_META[name] || {};
+  let dataAsOf = null;
+  if (sector.epoch) {
+    dataAsOf = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false
+    }).format(new Date(sector.epoch * 1000)) + " IST";
+  }
+
+  return {
+    ok: true,
+    sector,
+    return5d: fiveR.status === "fulfilled" ? rangeReturn(fiveR.value) : null,
+    return1m: monthR.status === "fulfilled" ? rangeReturn(monthR.value) : null,
+    scope: meta.scope || `${name} is an Indian NSE-linked sector index.`,
+    drivers: meta.drivers || "Sector-specific demand, earnings, policy and macro conditions.",
+    officialLink: officialSectorLink(name),
+    quoteLink: quoteLink(symbol),
+    dataAsOf
+  };
+}
+
+function parseJsonObject(text) {
+  if (!text) return null;
+  let t = String(text).trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try { return JSON.parse(t); } catch (_) {}
+
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(t.slice(start, end + 1)); } catch (_) {}
+  }
+  return null;
+}
+
+function deterministicSectorInsight(name, sector, market) {
+  const meta = SECTOR_META[name] || {};
+  const pct = num(sector?.pct);
+  const nifty = num(market?.quotes?.nifty?.pct);
+  const gap = pct !== null && nifty !== null ? pct - nifty : null;
+  const relative = gap === null
+    ? "Relative performance versus Nifty 50 is unavailable."
+    : `The sector is ${gap >= 0 ? "outperforming" : "underperforming"} Nifty 50 by ${Math.abs(gap).toFixed(2)} percentage points.`;
+
+  return {
+    what: meta.scope || `${name} is an Indian NSE-linked sector signal.`,
+    why: `The latest sector move is ${pct === null ? "mixed" : pct > 0 ? "positive" : pct < 0 ? "negative" : "flat"}. ${relative} A specific catalyst should be verified from current news before attributing the move to one reason.`,
+    how: `Compare ${name} with Nifty 50, its intraday trend and short-term momentum to judge whether the move is broad, persistent or only a one-day divergence.`,
+    nextStep: `Review your existing ${name} exposure and portfolio concentration; avoid chasing a one-day move and keep any allocation decision aligned with your goal, horizon and risk profile.`
+  };
+}
+
+async function buildSectorInsight(name, env) {
+  const [sectorPayload, market] = await Promise.all([
+    buildSectorPayload(name),
+    buildMarketPayload()
+  ]);
+
+  if (!sectorPayload.ok) return { ok: false, error: sectorPayload.error };
+
+  const fallback = deterministicSectorInsight(name, sectorPayload.sector, market);
+  if (!env.AI) {
+    return { ok: true, insight: fallback, sources: [
+      { title: "Nifty Indices", url: sectorPayload.officialLink },
+      { title: "Public quote", url: sectorPayload.quoteLink }
+    ]};
+  }
+
+  const prompt = `You are a concise Indian market sector analyst.
+Return JSON only with exactly these keys: what, why, how, nextStep.
+Each value must be ONE short sentence, plain text, no markdown.
+
+Sector: ${name}
+Sector data: ${JSON.stringify({
+    price: sectorPayload.sector.price,
+    pct: sectorPayload.sector.pct,
+    open: sectorPayload.sector.open,
+    high: sectorPayload.sector.high,
+    low: sectorPayload.sector.low,
+    return5d: sectorPayload.return5d,
+    return1m: sectorPayload.return1m
+  })}
+Nifty 50: ${JSON.stringify(market.quotes?.nifty || {})}
+Scope: ${sectorPayload.scope}
+Known structural drivers: ${sectorPayload.drivers}
+
+Instructions:
+- what: explain what this sector index represents.
+- why: explain the most likely CURRENT reason(s) for today's move using web search when available; do not invent a catalyst.
+- how: tell an investor how to interpret today's reading versus Nifty and the short-term trend.
+- nextStep: give a non-personalized investor action such as review allocation/concentration, watch confirmation, or avoid chasing.
+- No buy/sell calls, no return promises.`;
+
+  let result = null;
+  try {
+    result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+      messages: [{ role: "user", content: prompt }],
+      stream: false,
+      max_completion_tokens: 420,
+      temperature: 0.15,
+      chat_template_kwargs: { enable_thinking: false },
+      web_search_options: {}
+    });
+  } catch (_) {
+    try {
+      result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+        max_completion_tokens: 420,
+        temperature: 0.15,
+        chat_template_kwargs: { enable_thinking: false }
+      });
+    } catch (_) {}
+  }
+
+  const text = extractText(result);
+  const parsed = parseJsonObject(text);
+  const sources = collectSources(result || {});
+  const insight = {
+    what: parsed?.what || fallback.what,
+    why: parsed?.why || fallback.why,
+    how: parsed?.how || fallback.how,
+    nextStep: parsed?.nextStep || fallback.nextStep
+  };
+
+  if (!sources.length) {
+    sources.push(
+      { title: "Nifty Indices", url: sectorPayload.officialLink },
+      { title: "Public quote", url: sectorPayload.quoteLink }
+    );
+  }
+
+  return { ok: true, insight, sources: sources.slice(0, 5) };
 }
 
 async function buildMarketPayload() {
@@ -513,6 +759,29 @@ export default {
 
     if (url.pathname === "/api/market" && request.method === "GET") {
       return marketResponse(request, ctx);
+    }
+
+    if (url.pathname === "/api/sector" && request.method === "GET") {
+      const name = String(url.searchParams.get("name") || "").trim();
+      if (!name) return json({ ok: false, error: "Sector name is required." }, 400, { "cache-control": "no-store" });
+      try {
+        const payload = await buildSectorPayload(name);
+        return json(payload, payload.ok ? 200 : 404, { "cache-control": "public, max-age=15, s-maxage=15" });
+      } catch (error) {
+        return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500, { "cache-control": "no-store" });
+      }
+    }
+
+    if (url.pathname === "/api/sector-insight" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const name = String(body?.name || "").trim();
+        if (!name) return json({ ok: false, error: "Sector name is required." }, 400, { "cache-control": "no-store" });
+        const payload = await buildSectorInsight(name, env);
+        return json(payload, payload.ok ? 200 : 500, { "cache-control": "no-store" });
+      } catch (error) {
+        return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500, { "cache-control": "no-store" });
+      }
     }
 
     if (url.pathname === "/api/ask" && request.method === "POST") {

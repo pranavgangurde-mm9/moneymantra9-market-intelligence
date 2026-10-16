@@ -101,7 +101,22 @@ main{padding:12px}
 .detailsection{margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
 .detailsection h4{font-size:12px;margin:0 0 8px}
 .detailrow{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:10px}.detailrow:last-child{border:0}
+
 .source-tag{display:inline-block;font-size:8px;font-weight:900;border-radius:999px;background:#EDF2F0;color:var(--muted);padding:4px 7px;margin-top:6px}
+.sector-insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.insight-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:11px}
+.insight-card h5{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.insight-card p{margin:0;font-size:10.5px;line-height:1.55}
+.sector-chart-wrap{background:#FBFCFC;border:1px solid var(--line);border-radius:14px;padding:10px;margin-top:10px}
+.sector-chart-wrap svg{width:100%;height:135px;display:block}
+.sector-chart-line{fill:none;stroke:#28719F;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.sector-chart-area{fill:rgba(40,113,159,.08)}
+.sector-chart-grid{stroke:#E6EBE8;stroke-width:1}
+.sector-source-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.sector-source-link{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:var(--navy);background:#EEF3F1;border:1px solid var(--line);padding:7px 9px;border-radius:999px;font-size:9px;font-weight:900}
+.loading-line{font-size:10px;color:var(--muted);padding:8px 0}
+@media(max-width:390px){.sector-insight-grid{grid-template-columns:1fr}}
+
 
 @media(min-width:700px){body{padding:20px}.app{border-radius:26px;overflow:hidden;box-shadow:0 24px 60px rgba(17,32,43,.15);min-height:860px}.tabs{bottom:20px;border-radius:0 0 26px 26px}.refreshbar{top:94px}}
 </style>
@@ -916,6 +931,193 @@ async function refreshAll(manual=false){
  }
 }
 
+
+const SECTOR_META = {
+  'IT': {
+    scope:'Indian information-technology and software-services companies.',
+    drivers:'Global technology spending, US/Europe demand, deal wins, INR/USD movement and employee costs.'
+  },
+  'Auto': {
+    scope:'Indian automobile manufacturers and auto-related companies.',
+    drivers:'Vehicle demand, interest rates, fuel prices, rural/urban consumption and commodity input costs.'
+  },
+  'Pharma': {
+    scope:'Indian pharmaceutical and healthcare-oriented listed companies.',
+    drivers:'Drug approvals, USFDA actions, product launches, export demand, pricing and currency movement.'
+  },
+  'FMCG': {
+    scope:'Consumer-staples companies selling everyday household and personal-use products.',
+    drivers:'Rural/urban demand, inflation, raw-material prices, pricing power and consumer sentiment.'
+  },
+  'Metal': {
+    scope:'Indian metal, mining, steel and non-ferrous companies.',
+    drivers:'Global commodity prices, China demand, domestic infrastructure demand, energy costs and currency.'
+  },
+  'Realty': {
+    scope:'Listed Indian real-estate developers and property-related companies.',
+    drivers:'Home-loan rates, housing demand, launches, liquidity, urban demand and regulatory conditions.'
+  },
+  'Energy': {
+    scope:'Indian companies linked to the energy value chain.',
+    drivers:'Crude oil, gas and power prices, refining margins, regulation, demand and global energy markets.'
+  },
+  'PSU Bank': {
+    scope:'Public-sector banks listed in India.',
+    drivers:'Credit growth, deposit costs, bond yields, asset quality, policy rates and government ownership actions.'
+  },
+  'Financial Services': {
+    scope:'Indian financial-services companies including lenders and other financial intermediaries.',
+    drivers:'Interest rates, liquidity, credit growth, asset quality, market activity and regulatory changes.'
+  },
+  'Infrastructure': {
+    scope:'Indian companies linked to infrastructure and capital-expenditure activity.',
+    drivers:'Government/private capex, project awards, order books, financing costs and execution progress.'
+  },
+  'Media': {
+    scope:'Indian media, entertainment, broadcasting and related companies.',
+    drivers:'Advertising spending, subscriptions, content economics, consumer demand and regulatory developments.'
+  },
+  'Banking': {
+    scope:'Major Indian banking companies represented by Bank Nifty.',
+    drivers:'Credit growth, deposit growth, net interest margins, asset quality, policy rates and liquidity.'
+  }
+};
+
+function sectorFallbackInsight(name, sector){
+ const meta=SECTOR_META[name]||{};
+ const nifty=marketData.nifty?.pct;
+ const pct=Number(sector?.pct);
+ let relative='Relative performance is unavailable.';
+ if(Number.isFinite(pct)&&Number.isFinite(nifty)){
+   const gap=pct-Number(nifty);
+   relative=`It is ${gap>=0?'outperforming':'underperforming'} Nifty 50 by ${Math.abs(gap).toFixed(2)} percentage points today.`;
+ }
+ const direction=Number.isFinite(pct)?(pct>0?'positive':pct<0?'negative':'flat'):'mixed';
+ return {
+   what:meta.scope||`${name} represents an Indian NSE-linked sector index.`,
+   why:`The latest price action is ${direction}. ${relative} A specific news catalyst should be verified from current sources before drawing a conclusion.`,
+   how:`Use the sector reading to judge whether ${name} is participating in or diverging from the broader market; compare the move with Nifty, sector trend and volatility.`,
+   nextStep:`For investors, review existing ${name} exposure and portfolio concentration before acting; avoid chasing a one-day move and align any change with your goal, horizon and risk level.`,
+   sources:[]
+ };
+}
+
+function sectorMiniChart(points){
+ if(!Array.isArray(points)||points.length<2) return '<div class="loading-line">Intraday chart is not available for this source.</div>';
+ const vals=points.map(p=>Number(p.pct)).filter(Number.isFinite);
+ if(vals.length<2)return '<div class="loading-line">Intraday chart is not available for this source.</div>';
+ const W=390,H=125,L=28,R=8,T=8,B=18;
+ const min=Math.min(...vals,-0.2),max=Math.max(...vals,0.2),range=(max-min)||1;
+ const x=i=>L+(i/(points.length-1))*(W-L-R);
+ const y=v=>T+(max-v)/range*(H-T-B);
+ const path=points.map((p,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(Number(p.pct)).toFixed(1)}`).join(' ');
+ const area=path+` L ${x(points.length-1)} ${H-B} L ${x(0)} ${H-B} Z`;
+ const zero=(min<=0&&max>=0)?`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="#C2CCC8" stroke-dasharray="3 3"/>`:'';
+ return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+   <line class="sector-chart-grid" x1="${L}" x2="${W-R}" y1="${T}" y2="${T}"/>
+   <line class="sector-chart-grid" x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}"/>
+   ${zero}
+   <path class="sector-chart-area" d="${area}"/>
+   <path class="sector-chart-line" d="${path}"/>
+   <text x="1" y="${T+5}" font-size="8" fill="#7C878D">${max.toFixed(1)}%</text>
+   <text x="1" y="${H-B+3}" font-size="8" fill="#7C878D">${min.toFixed(1)}%</text>
+   <text x="${L}" y="${H-3}" font-size="8" fill="#7C878D">${points[0].time||''}</text>
+   <text x="${W-42}" y="${H-3}" font-size="8" fill="#7C878D">${points[points.length-1].time||''}</text>
+ </svg>`;
+}
+
+function sectorSourceLinks(payload, insight){
+ const src=[];
+ if(payload?.officialLink)src.push({title:'Official Nifty Index',url:payload.officialLink});
+ if(payload?.quoteLink)src.push({title:'Public quote',url:payload.quoteLink});
+ (insight?.sources||[]).forEach(s=>{if(s?.url)src.push({title:s.title||'Current source',url:s.url})});
+ const seen=new Set();
+ return src.filter(s=>{if(seen.has(s.url))return false;seen.add(s.url);return true}).slice(0,5)
+   .map(s=>`<a class="sector-source-link" href="${s.url}" target="_blank" rel="noopener noreferrer">↗ ${s.title}</a>`).join('');
+}
+
+async function openSectorDetail(name){
+ const listItem=(marketData.sectors||[]).find(x=>x[0]===name);
+ const fallbackSector={name,price:listItem?.[1],pct:listItem?.[2]};
+ const fallback=sectorFallbackInsight(name,fallbackSector);
+ showSheet(`${name} Sector`,'Indian sector intelligence',
+   `<div class="detailgrid">
+      ${detailCell('Index level',fmtNum(fallbackSector.price),cls(fallbackSector.pct))}
+      ${detailCell('Today',fmtPct(fallbackSector.pct),cls(fallbackSector.pct))}
+    </div>
+    <div class="detailsection"><h4>Sector Intelligence</h4><div class="loading-line">Loading sector metrics, trend and current explanation…</div></div>
+    <div class="sector-insight-grid">
+      <div class="insight-card"><h5>What</h5><p>${fallback.what}</p></div>
+      <div class="insight-card"><h5>Why</h5><p>${fallback.why}</p></div>
+      <div class="insight-card"><h5>How to interpret</h5><p>${fallback.how}</p></div>
+      <div class="insight-card"><h5>Next step</h5><p>${fallback.nextStep}</p></div>
+    </div>`);
+
+ try{
+   let payload=null;
+   if(API_BASE){
+     const r=await fetch(`${API_BASE}/api/sector?name=${encodeURIComponent(name)}`,{cache:'no-store'});
+     if(r.ok)payload=await r.json();
+   }
+   if(!payload?.ok)throw new Error(payload?.error||'Sector data unavailable');
+
+   let insight=fallback;
+   try{
+     const ir=await fetch(`${API_BASE}/api/sector-insight`,{
+       method:'POST',
+       headers:{'Content-Type':'application/json','Accept':'application/json'},
+       body:JSON.stringify({name})
+     });
+     if(ir.ok){
+       const ij=await ir.json();
+       if(ij?.ok&&ij?.insight) insight={...fallback,...ij.insight,sources:ij.sources||[]};
+     }
+   }catch(_){}
+
+   const d=payload.sector||{};
+   const rel=Number.isFinite(Number(d.pct))&&Number.isFinite(Number(marketData.nifty?.pct))
+      ? Number(d.pct)-Number(marketData.nifty.pct):null;
+   const dayRange=(Number.isFinite(Number(d.high))&&Number.isFinite(Number(d.low)))
+      ? `${fmtNum(d.low)} – ${fmtNum(d.high)}`:'--';
+
+   const body=`
+     <div class="detailgrid">
+       ${detailCell('Index level',fmtNum(d.price),cls(d.pct))}
+       ${detailCell('Today',fmtPct(d.pct),cls(d.pct))}
+       ${detailCell('Vs Nifty',Number.isFinite(rel)?`${rel>=0?'+':''}${rel.toFixed(2)} pp`:'--',Number.isFinite(rel)?cls(rel):'')}
+       ${detailCell('5-day',Number.isFinite(Number(payload.return5d))?fmtPct(payload.return5d):'--',cls(payload.return5d))}
+       ${detailCell('1-month',Number.isFinite(Number(payload.return1m))?fmtPct(payload.return1m):'--',cls(payload.return1m))}
+       ${detailCell('Day range',dayRange)}
+     </div>
+     <div class="sector-chart-wrap">
+       <div style="font-size:10px;font-weight:900;margin-bottom:6px">Intraday sector trend</div>
+       ${sectorMiniChart(d.timeline||[])}
+     </div>
+     <div class="detailsection">
+       <h4>Scope & key drivers</h4>
+       <div style="font-size:10.5px;line-height:1.55">${payload.scope||fallback.what}</div>
+       <div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:7px"><b>Key drivers:</b> ${payload.drivers||SECTOR_META[name]?.drivers||'Sector-specific demand, earnings and macro conditions.'}</div>
+       <span class="source-tag">${payload.dataAsOf||marketData.timestamp||'Latest available'}</span>
+     </div>
+     <div class="sector-insight-grid">
+       <div class="insight-card"><h5>What</h5><p>${insight.what}</p></div>
+       <div class="insight-card"><h5>Why today</h5><p>${insight.why}</p></div>
+       <div class="insight-card"><h5>How to interpret</h5><p>${insight.how}</p></div>
+       <div class="insight-card"><h5>Next step for investors</h5><p>${insight.nextStep}</p></div>
+     </div>
+     <div class="detailsection">
+       <h4>Public sources</h4>
+       <div style="font-size:9.5px;color:var(--muted);line-height:1.45">Use these links to verify index construction, constituents, factsheets or current public-market data. Public quotes can be delayed; a licensed feed can replace the data adapter later without changing this screen.</div>
+       <div class="sector-source-list">${sectorSourceLinks(payload,insight)}</div>
+     </div>`;
+   document.getElementById('detailBody').innerHTML=body;
+ }catch(e){
+   const current=document.getElementById('detailBody');
+   current.insertAdjacentHTML('beforeend',
+     `<div class="alert amber"><b>Live sector detail unavailable.</b><br/>${e.message}. The basic sector scope and investor interpretation above remain available.</div>`);
+ }
+}
+
 function closeDetail(){
  document.getElementById('modalBackdrop').classList.remove('open');
  document.getElementById('detailSheet').classList.remove('open');
@@ -981,11 +1183,7 @@ function openDetail(type,arg){
    return showSheet('Indian Sector Breadth','NSE sectoral indices',body);
  }
  if(type==='sector'){
-   const s=(marketData.sectors||[]).find(x=>x[0]===arg);
-   if(!s)return;
-   const body=`<div class="detailgrid">${detailCell('Index level',fmtNum(s[1]),cls(s[2]))}${detailCell('Change',fmtPct(s[2]),cls(s[2]))}</div>
-   <div class="detailsection"><h4>Scope</h4><div style="font-size:10px;line-height:1.6">${arg} is shown as an Indian NSE sectoral market signal. A later licensed-data build can add constituents, top contributors, advance/decline and intraday sector charts here.</div><span class="source-tag">${marketData.timestamp}</span></div>`;
-   return showSheet(`${arg} Sector`,'Indian NSE sector pulse',body);
+   return openSectorDetail(arg);
  }
 }
 

@@ -1,11 +1,14 @@
-MoneyMantra 9 Market Intelligence — Concise Finance AI
+MoneyMantra 9 Market Intelligence — Sector Intelligence Build
 
-Changes:
-- max 3-sentence AI answers
-- no tables / headings / long Markdown
-- selective web search
-- market questions use proxy market context first
-- latest policy/regulatory/news questions may use web search
-- hard answer-length post-processing
+New:
+- rich sector drill-down
+- intraday sector chart
+- 5-day and 1-month momentum
+- relative performance vs Nifty
+- official Nifty Indices link
+- public quote link
+- AI/web-grounded “Why today”
+- What / Why / How / Next step investor framework
+- transparent fallback when a current catalyst cannot be verified
 
-See AI_CONCISE_SETUP.md.
+See SECTOR_INTELLIGENCE_SETUP.md.
