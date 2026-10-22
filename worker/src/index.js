@@ -5,7 +5,8 @@ const CORE_SYMBOLS = {
   vix: "^INDIAVIX",
   nasdaq: "^IXIC",
   sp: "^GSPC",
-  nikkei: "^N225"
+  nikkei: "^N225",
+  sgx: "^STI" // Singapore Straits Times Index (SGX-listed equities benchmark)
 };
 
 const SECTOR_SYMBOLS = {
@@ -128,6 +129,7 @@ function json(data, status = 200, extra = {}) {
 }
 
 function num(v) {
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -730,7 +732,7 @@ ${JSON.stringify(marketContext)}`;
 async function marketResponse(request, ctx) {
   const url = new URL(request.url);
   const cache = caches.default;
-  const cacheKey = new Request(`${url.origin}/api/market?v=3`, { method: "GET" });
+  const cacheKey = new Request(`${url.origin}/api/market?v=sgx-city-silver-1`, { method: "GET" });
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
@@ -738,6 +740,329 @@ async function marketResponse(request, ctx) {
   const response = json(payload, payload.ok ? 200 : 502);
   if (payload.ok) ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
+}
+
+// === Multi-timeframe Pulse Engine (Indian cash market, timezone IST) ===
+const PULSE_FRAMES = Object.freeze({m15:15, m30:30, h1:60});
+const PULSE_SYMBOLS = {
+  'RELIANCE.NS':'Reliance Industries', 'INFY.NS':'Infosys',
+  'TCS.NS':'Tata Consultancy Services', 'HDFCBANK.NS':'HDFC Bank',
+  'ICICIBANK.NS':'ICICI Bank', 'SBIN.NS':'State Bank of India',
+  'BHARTIARTL.NS':'Bharti Airtel', 'ITC.NS':'ITC',
+  'WIPRO.NS':'Wipro', 'HINDUNILVR.NS':'Hindustan Unilever',
+  'LT.NS':'Larsen & Toubro', 'AXISBANK.NS':'Axis Bank',
+  'KOTAKBANK.NS':'Kotak Mahindra Bank', 'BAJFINANCE.NS':'Bajaj Finance',
+  'MARUTI.NS':'Maruti Suzuki', 'TATAMOTORS.NS':'Tata Motors',
+  'SUNPHARMA.NS':'Sun Pharma', 'NTPC.NS':'NTPC',
+  'TATASTEEL.NS':'Tata Steel', 'ONGC.NS':'ONGC'
+};
+const TZ = 'Asia/Kolkata';
+function pulseParts(epochMs) {
+  const fields = new Intl.DateTimeFormat('en-GB',{timeZone:TZ, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date(epochMs));
+  const p = Object.fromEntries(fields.map(x=>[x.type,x.value]));
+  return {date:`${p.year}-${p.month}-${p.day}`, mins:Number(p.hour)*60+Number(p.minute), time:`${p.hour}:${p.minute}`};
+}
+function pulsePct(x,y){return Number.isFinite(x)&&Number.isFinite(y)&&y!==0 ? (x-y)*100/y : null}
+function pulseClamp(v,a,b){return Math.min(b,Math.max(a,v))}
+function pulseTrend(score){return score>=65?'STRONG BULLISH':score>=35?'BULLISH':score>=15?'MILD BULLISH':score<=-65?'STRONG BEARISH':score<=-35?'BEARISH':score<=-15?'MILD BEARISH':'NEUTRAL'}
+function chartFiveMinuteBars(r){
+ const timestamps=r.timestamp||[], q=r.indicators?.quote?.[0]||{}, bars=[];
+ for(let i=0;i<timestamps.length;i++){
+  const at=Number(timestamps[i])*1000, close=num(q.close?.[i]), open=num(q.open?.[i]);
+  if(!Number.isFinite(at)||close===null)continue;
+  const t=pulseParts(at);
+  if(t.mins<555||t.mins>=930||((t.mins-555)%5))continue;
+  bars.push({date:t.date,mins:t.mins,time:t.time,epoch:Number(timestamps[i]),open:open??close,close,high:num(q.high?.[i]),low:num(q.low?.[i]),volume:num(q.volume?.[i])});
+ }
+ return bars;
+}
+function completedPulseBars(bars,period,asOfMs=Date.now()){
+ const groups=new Map(), now=pulseParts(asOfMs);
+ for(const bar of bars){
+  const sessionIdx=Math.floor((bar.mins-555)/period), start=555+sessionIdx*period, end=start+period;
+  if(end>930)continue; // no pretend-complete 60-minute candle at 15:30 (last hour is partial)
+  const key=`${bar.date}/${start}`;
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push(bar);
+ }
+ const completed=[];
+ for(const [key,vals] of groups){
+  const [date,startTxt]=key.split('/'),start=Number(startTxt),end=start+period;
+  if(date>now.date || (date===now.date&&end>now.mins))continue;
+  vals.sort((a,b)=>a.mins-b.mins);
+  const expected=period/5;
+  const slots=new Set(vals.map(v=>v.mins));
+  if(slots.size!==expected || vals[0].mins!==start || vals[vals.length-1].mins!==end-5)continue;
+  let valid=true;for(let t=start;t<end;t+=5){if(!slots.has(t)){valid=false;break}}
+  if(!valid)continue;
+  completed.push({date, start, end, time:`${String(Math.floor(end/60)).padStart(2,'0')}:${String(end%60).padStart(2,'0')}`,open:vals[0].open,close:vals[vals.length-1].close,high:Math.max(...vals.map(v=>v.high??v.close)),low:Math.min(...vals.map(v=>v.low??v.close)),volume:vals.every(v=>v.volume!==null)?vals.reduce((a,v)=>a+v.volume,0):null});
+ }
+ completed.sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);
+ return completed;
+}
+function intradayObservation(bars,period,asOfMs){
+ const completed=completedPulseBars(bars,period,asOfMs);
+ if(!completed.length)return null;
+ const last=completed[completed.length-1];
+ // The observation measures the move within the last fully completed period.
+ return {pct:pulsePct(last.close,last.open),close:last.close,previousClose:last.open,open:last.open,high:last.high,low:last.low,volume:last.volume,sessionDate:last.date,asOf:`${last.date} ${last.time} IST`,barEnd:last.time,barCount:completed.filter(x=>x.date===last.date).length,periodMinutes:period,complete:true};
+}
+function dailyObservations(r,asOfMs=Date.now()){
+ const ts=r.timestamp||[],q=r.indicators?.quote?.[0]||{}, now=pulseParts(asOfMs),metaEpoch=Number(r.meta?.regularMarketTime||0)*1000;
+ const map=new Map();
+ for(let i=0;i<ts.length;i++){
+  const close=num(q.close?.[i]),epoch=Number(ts[i])*1000;
+  if(close===null||!Number.isFinite(epoch))continue;
+  const p=pulseParts(epoch);
+  const currentDay=p.date===now.date;
+  // Current day counts ONLY after cash close and source's latest update is after close.
+  if(p.date>now.date || (currentDay && (now.mins<930||pulseParts(metaEpoch).date!==p.date||pulseParts(metaEpoch).mins<930)))continue;
+  map.set(p.date,{date:p.date,close});
+ }
+ const days=[...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
+ const rows=days.slice(1).map((x,i)=>({...x,pct:pulsePct(x.close,days[i].close)}));
+ return {latest:rows.length?{pct:rows[rows.length-1].pct,close:rows[rows.length-1].close,previousClose:days[days.length-2].close,sessionDate:rows[rows.length-1].date,asOf:`${rows[rows.length-1].date} 15:30 IST`,complete:true}:null,history:rows.slice(-35)};
+}
+function pulseScore(observation,peers=[],stockMode=false,frame='m15'){
+ if(!observation||!Number.isFinite(observation.pct))return null;
+ const scales=stockMode?{m15:1,m30:1.5,h1:2.2,d1:3.5}:{m15:0.45,m30:0.65,h1:0.95,d1:1.5};
+ const basis=pulseClamp(observation.pct/scales[frame]*75,-100,100);
+ const aligned=peers.filter(p=>p&&p.sessionDate===observation.sessionDate&&Number.isFinite(p.pct));
+ const peerMean=aligned.length ? aligned.reduce((a,p)=>a+pulseClamp(p.pct/scales[frame]*75,-100,100),0)/aligned.length : 0;
+ const score=Math.round(basis*(stockMode?1:aligned.length?0.7:1)+peerMean*(stockMode?0:aligned.length?0.3:0));
+ const agreement=aligned.filter(p=>Math.sign(p.pct)===Math.sign(observation.pct)).length;
+ const coverage=stockMode?'Single-stock price momentum':`${1+aligned.length}/3 index signals`;
+ const confidence=pulseClamp(Math.round((stockMode?50:54)+Math.min(2,aligned.length)*7+(stockMode?0:agreement*5)+Math.min(Math.abs(observation.pct/scales[frame]),1)*8),40,84);
+ return {...observation,score,signal:pulseTrend(score),confidence,coverage,relative:stockMode&&aligned[0]?observation.pct-aligned[0].pct:null,method:stockMode?'Stock-only price momentum (not market breadth)':'Index momentum with available Bank Nifty/Sensex confirmation',predictive:false};
+}
+function validPulseSymbol(input){
+ const s=String(input||'^NSEI').trim().toUpperCase();
+ if(s==='^NSEI')return s;
+ return /^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(s)?s:null;
+}
+async function buildPulsePayload(symbol){
+ const stockMode=symbol!=='^NSEI';
+ const symbols=stockMode?[symbol,'^NSEI']:[symbol,'^NSEBANK','^BSESN'];
+ const data=await Promise.all(symbols.map(async key=>{
+  const [five,daily]=await Promise.allSettled([fetchYahooChart(key,'5m','5d'),fetchYahooChart(key,'1d','2mo')]);
+  return {key,five:five.status==='fulfilled'?five.value:null,daily:daily.status==='fulfilled'?daily.value:null,error:five.status==='rejected'&&daily.status==='rejected'?String(five.reason):null};
+ }));
+ const primary=data[0],now=Date.now();
+ if(!primary.five&&!primary.daily)return {ok:false,error:primary.error||'This symbol is not available from the public quote source.'};
+ const observations={};
+ for(const datum of data){
+  const o={};
+  if(datum.five){
+   const bars=chartFiveMinuteBars(datum.five);
+   for(const [name,minutes] of Object.entries(PULSE_FRAMES))o[name]=intradayObservation(bars,minutes,now);
+  }
+  if(datum.daily)o.d1=dailyObservations(datum.daily,now).latest;
+  observations[datum.key]=o;
+ }
+ const p=observations[symbol];const peers=stockMode?[observations['^NSEI']]:data.slice(1).map(d=>observations[d.key]);
+ const periods={};
+ for(const frame of ['m15','m30','h1','d1'])periods[frame]=pulseScore(p[frame],peers.map(x=>x?.[frame]),stockMode,frame);
+ const latestRaw=primary.five||primary.daily;
+ const quote=normalizeChart(latestRaw,false);
+ const session=pulseParts((quote.epoch||0)*1000);
+ const history=primary.daily?dailyObservations(primary.daily,now).history:[];
+ return {ok:true,symbol,name:stockMode?(PULSE_SYMBOLS[symbol]||latestRaw.meta?.longName||latestRaw.meta?.shortName||symbol):'Nifty 50 Market',kind:stockMode?'stock':'market',quote,quoteDate:session.date,quoteTime:session.time,periods,history,source:'Public chart feed (may be delayed)',generatedAt:new Date().toISOString(),notes:'Timeframe readings use completed bars only; daily reading uses completed trading days. Scores describe past momentum, not forecast success.'};
+}
+
+
+// India-benchmark replacement for international XAU/XAG conversion.
+const GOLD_PURITY=Object.freeze({"18K":750,"20K":833,"22K":916,"23K":958,"24K":999});
+// INDIAN BULLION BENCHMARK — published domestic reference, NOT XAU/USD conversion.
+// All India Bullion explicitly permits quoting its daily fix with attribution.
+// Rate is a dated reference, NOT a real-time MCX tick or a jeweller's final price.
+const INDIA_BENCHMARK_URL = 'https://allindiabullion.com/benchmark';
+const INDIA_BENCHMARK_CACHE_VERSION = 'india-metals-20261022-v1';
+const INDIA_MONTHS = Object.freeze({january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12});
+function decodeBenchmarkHtml(markup){
+  return String(markup||'')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+    .replace(/<!--[\s\S]*?-->/g,' ')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/&(?:nbsp|#160);/gi,' ')
+    .replace(/&#x20b9;|&#8377;|&rupee;/gi,'₹')
+    .replace(/&amp;/gi,'&').replace(/\s+/g,' ').trim();
+}
+function parseIndiaBenchmark(html){
+  const all=decodeBenchmarkHtml(html);
+  const start=all.search(/Latest\s+fix/i);
+  if(start<0)throw Error('No latest daily fix found on publisher page');
+  const limit=all.slice(start,start+2500);
+  const untilCitation=limit.search(/How to cite it/i);
+  const block=untilCitation>0?limit.slice(0,untilCitation):limit;
+  const dateMatch=block.match(/\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})\b/i);
+  const goldMatch=block.match(/Gold\s*999\s*\(?24K\)?[\s\S]{0,180}?₹\s*([\d,]+)/i);
+  const silverMatch=block.match(/Silver\s*999[\s\S]{0,180}?₹\s*([\d,]+)/i);
+  if(!dateMatch || !goldMatch || !silverMatch)throw Error('Publisher changed daily benchmark layout');
+  const gold=Number(goldMatch[1].replace(/,/g,''));
+  const silver=Number(silverMatch[1].replace(/,/g,''));
+  if(!(gold>=20000 && gold<=500000 && silver>=20000 && silver<=1000000))throw Error('Benchmark values failed India-rate plausibility check');
+  const day=Number(dateMatch[1]),month=INDIA_MONTHS[dateMatch[2].toLowerCase()],year=Number(dateMatch[3]);
+  const stamp=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  const dateObj=new Date(`${stamp}T03:00:00+05:30`);
+  if(!Number.isFinite(dateObj.getTime())||new Date(Date.UTC(year,month-1,day)).getUTCDate()!==day)throw Error('Benchmark date invalid');
+  const age=Date.now()-dateObj.getTime();
+  if(age < -12*3600000 || age>9*86400000)throw Error('Indian benchmark too old or future-dated');
+  return {
+    ok:true,kind:'india-daily-benchmark',country:'India',
+    gold24kPer10g:gold,silver999PerKg:silver,
+    publishedDate:stamp,priceAsOf:dateObj.toISOString(),checkedAt:new Date().toISOString(),
+    sourceName:'All India Bullion — daily India benchmark',sourceUrl:INDIA_BENCHMARK_URL,
+    attribution:`All India Bullion benchmark, ${dateMatch[1]} ${dateMatch[2]} ${dateMatch[3]}, 03:00 IST`,
+    notRealtime:true,
+    note:'Published India-wide reference, recorded at 03:00 IST. Not a streaming exchange price, not a shop quote; GST and making charges excluded.'
+  };
+}
+async function fetchIndiaBenchmark(){
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),11000);
+  try{
+    const res=await fetch(INDIA_BENCHMARK_URL,{
+      method:'GET',signal:ctrl.signal,
+      headers:{accept:'text/html'},cf:{cacheTtl:1800,cacheEverything:true}
+    });
+    if(!res.ok)throw Error(`Publisher HTTP ${res.status}`);
+    return parseIndiaBenchmark(await res.text());
+  }finally{clearTimeout(timer)}
+}
+async function indiaBenchmarkEndpoint(request,ctx){
+  const origin=new URL(request.url).origin;
+  const cacheKey=new Request(origin+'/api/india-metals?version='+INDIA_BENCHMARK_CACHE_VERSION);
+  const cache=caches.default;
+  const hit=await cache.match(cacheKey);
+  if(hit)return hit;
+  try{
+    const payload=await fetchIndiaBenchmark();
+    const response=json(payload,200,{'cache-control':'public,max-age=1800,s-maxage=1800'});
+    ctx.waitUntil(cache.put(cacheKey,response.clone()));
+    return response;
+  }catch(e){
+    return json({ok:false,kind:'india-daily-benchmark',error:'Published Indian metal benchmark unavailable',detail:String(e?.message||e),sourceUrl:INDIA_BENCHMARK_URL},502,{'cache-control':'no-store'});
+  }
+}
+async function goldEndpoint(request,ctx){
+  const base=await indiaBenchmarkEndpoint(request,ctx),j=await base.json();
+  if(!j.ok)return json(j,502,{'cache-control':'no-store'});
+  return json({...j,metal:'Gold',spot24kInrPerGram:j.gold24kPer10g/10,grades:Object.entries(GOLD_PURITY).map(([karat,p])=>({karat,fineness:p,perGram:j.gold24kPer10g/10*p/999}))},200,{'cache-control':'public,max-age=1800,s-maxage=1800'});
+}
+async function silverEndpoint(request,ctx){
+  const base=await indiaBenchmarkEndpoint(request,ctx),j=await base.json();
+  if(!j.ok)return json(j,502,{'cache-control':'no-store'});
+  return json({...j,metal:'Silver',purity:'999',priceInrPerKg:j.silver999PerKg,priceInrPerGram:j.silver999PerKg/1000,priceInrPer10g:j.silver999PerKg/100},200,{'cache-control':'public,max-age=1800,s-maxage=1800'});
+}
+
+// === City gold rates: credentialed providers only; no automated publisher scraping. ===
+// Priority: API Express (monthly trial allowance advertised), then Nebula (prepaid credits).
+const CITY_GOLD=Object.freeze({
+ 'Mumbai':'mumbai','Thane':'thane','Delhi':'delhi','Chennai':'chennai',
+ 'Bengaluru':'bangalore','Kolkata':'kolkata','Hyderabad':'hyderabad',
+ 'Pune':'pune','Ahmedabad':'ahmedabad','Surat':'surat','Jaipur':'jaipur',
+ 'Lucknow':'lucknow','Kochi':'kochi','Indore':'indore','Nagpur':'nagpur',
+ 'Vadodara':'vadodara','Chandigarh':'chandigarh','Patna':'patna'
+});
+function cityGoldUrl(city){return `https://www.goodreturns.in/gold-rates/${CITY_GOLD[city]}.html`}
+function amount(x){
+ const n=Number(x);
+ return x!==null&&x!==undefined&&x!==''&&Number.isFinite(n)&&n>1000&&n<1000000?n:null;
+}
+function entryPrice(x){
+ if(typeof x==='number'||typeof x==='string')return amount(x);
+ if(x&&typeof x==='object')return amount(x.pricePerGram??x.finalPricePerGram??x.rate??x.price);
+ return null;
+}
+function dateFromSource(x){
+ if(typeof x==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(x))return x;
+ const ms=Date.parse(x||'');return Number.isFinite(ms)?new Date(ms).toISOString().slice(0,10):null;
+}
+function dateForTodayInIndia(){
+ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replace(/(\d{2})\/(\d{2})\/(\d{4})/,'$3-$2-$1');
+}
+function cityPayload(city, provider, url, p18,p22,p24, hasGST, date, updatedAt, metadata={}){
+ if(![p22,p24].every(x=>x!==null))throw new Error('Missing 22K or 24K provider prices');
+ // Basic cross-purity validation; do not forward untrusted or outdated samples as confirmed market data.
+ const ratio=p22/p24;
+ if(ratio<0.83||ratio>0.98)throw new Error('Inconsistent 22K/24K rate ratio');
+ const rates={ '18K':p18??p24*(750/999), '20K':p24*(833/999), '22K':p22, '23K':p24*(958/999), '24K':p24 };
+ return {
+   ok:true,city,source:provider,sourceType:'Third-party city indicative retail reference; not a jeweller counter quote',
+   sourceUrl:url,verifyUrl:cityGoldUrl(city),publishedDate:date,quoteTimestamp:updatedAt||null,
+   checkedAt:new Date().toISOString(),rates,
+   publishedKarat:p18?['18K','22K','24K']:['22K','24K'],
+   estimatedKarat:p18?['20K','23K']:['18K','20K','23K'],
+   gstIncluded:hasGST===true,makingChargesIncluded:false,
+   providerConfidence:metadata.confidence||null,
+   note:'Rates are per gram in INR. Provider-supplied purities and calculated equivalents are identified separately. Local jewellery margins, making charges, stones and buyback deductions may differ.'
+ };
+}
+async function apiExpressCity(city,key){
+ const url='https://api.apiexpress.in/v1/commodity/gold?city='+encodeURIComponent(city);
+ const ctrl=new AbortController(),tm=setTimeout(()=>ctrl.abort(),9500);
+ try{
+   const r=await fetch(url,{signal:ctrl.signal,headers:{Authorization:'Bearer '+key,Accept:'application/json'}});
+   if(!r.ok)throw Error('API Express HTTP '+r.status);
+   const raw=await r.json(),data=raw?.data||raw;
+   const p24=entryPrice(data.gold_24k??data.gold24k??data.rates?.gold24k),
+         p22=entryPrice(data.gold_22k??data.gold22k??data.rates?.gold22k),
+         p18=entryPrice(data.gold_18k??data.gold18k??data.rates?.gold18k);
+   if(raw?.status==='error'||raw?.success===false)throw Error('Provider reported error');
+   const date=dateFromSource(data.updated||data.timestamp||data.date);
+   if(!date)throw Error('API Express response lacks a verifiable date');
+   return cityPayload(city,'API Express · city quote API', 'https://www.apiexpress.in/apis/commodity-price',p18,p22,p24,data.gst_included??null,date,data.updated||data.timestamp||null);
+ }finally{clearTimeout(tm)}
+}
+async function nebulaCity(city,key){
+ const url='https://workspace.nebulaapi.com/gold_price?city='+encodeURIComponent(city);
+ const ctrl=new AbortController(),tm=setTimeout(()=>ctrl.abort(),9500);
+ try{
+   const r=await fetch(url,{signal:ctrl.signal,headers:{'x-api-key':key,Accept:'application/json'}});
+   if(!r.ok)throw Error('Nebula HTTP '+r.status);
+   const raw=await r.json();if(raw?.success===false)throw Error('Provider reported error');
+   const data=raw?.prices||{};
+   const p24=entryPrice(data.gold24k),p22=entryPrice(data.gold22k),p18=entryPrice(data.gold18k);
+   const date=dateFromSource(raw.date||raw.timestamp);
+   if(!date)throw Error('Nebula response lacks a verifiable date');
+   return cityPayload(city,'Nebula Metals · city quote API','https://metals.nebulaapi.com/docs/guides/gold-prices',p18,p22,p24,true,date,raw.timestamp||null,raw.metadata||{});
+ }finally{clearTimeout(tm)}
+}
+async function crossCheckGoldCity(p){
+ // Validate against the independent gold spot feed when reachable.
+ // Do not confuse international spot equivalence with local shop reference prices.
+ try{
+   const q=await buildGoldPayload(); const base=q?.spot24kInrPerGram;
+   if(!Number.isFinite(base)||base<=0)return p;
+   const ratio=p.rates['24K']/base;
+   if(ratio<0.73||ratio>1.75)throw Error('Provider rate is implausible versus independent international spot benchmark');
+   p.spotCrossCheck='within broad sanity range';
+   return p;
+ }catch(e){
+   if(String(e?.message||'').includes('implausible'))throw e;
+   p.spotCrossCheck='not available';return p;
+ }
+}
+async function cityGoldEndpoint(request,env,ctx){
+ const url=new URL(request.url),city=String(url.searchParams.get('city')||'Mumbai').trim();
+ if(!Object.hasOwn(CITY_GOLD,city))return json({ok:false,error:'Unsupported city',supportedCities:Object.keys(CITY_GOLD)},400,{'cache-control':'no-store'});
+ const configured=Boolean(env.APIEXPRESS_KEY||env.NEBULA_API_KEY);
+ if(!configured)return json({ok:false,city,error:'City rate feed not configured',detail:'Set APIEXPRESS_KEY or NEBULA_API_KEY as a Cloudflare Worker secret. City rates cannot be sourced reliably from blocked publisher pages.',setupRequired:true,sourceUrl:cityGoldUrl(city),providerOptions:['API Express','Nebula Metals']},503,{'cache-control':'no-store'});
+ // Cache longer than the 15-second market refresh: city rates generally publish daily.
+ // Cloudflare Cache API may be per-colo and is not a global quota guarantee.
+ const cache=caches.default,provider=env.APIEXPRESS_KEY?'apiexpress':'nebula';
+ const cacheKey=new Request(url.origin+'/api/city-gold?city='+encodeURIComponent(city)+'&provider='+provider+'&v=4');
+ const cached=await cache.match(cacheKey);if(cached)return cached;
+ const errors=[];
+ for(const [name,key,fn] of [['API Express',env.APIEXPRESS_KEY,apiExpressCity],['Nebula Metals',env.NEBULA_API_KEY,nebulaCity]]){
+   if(!key)continue;
+   try{
+     const payload=await crossCheckGoldCity(await fn(city,key));
+     const response=json(payload,200,{'cache-control':'public,max-age=21600,s-maxage=21600'});
+     ctx.waitUntil(cache.put(cacheKey,response.clone()));return response;
+   }catch(e){errors.push(`${name}: ${String(e?.message||e)}`)}
+ }
+ return json({ok:false,city,error:'Configured city providers unavailable',detail:errors.join('; ').slice(0,240),sourceUrl:cityGoldUrl(city),retryLater:true},502,{'cache-control':'no-store'});
 }
 
 export default {
@@ -757,8 +1082,36 @@ export default {
       }, 200, { "cache-control": "no-store" });
     }
 
+    if ((url.pathname === "/api/india-metals" || url.pathname === "/api/india-metals/") && request.method === "GET") {
+      return indiaBenchmarkEndpoint(request,ctx);
+    }
+    if ((url.pathname === "/api/gold" || url.pathname === "/api/gold/") && request.method === "GET") {
+      return goldEndpoint(request,ctx);
+    }
+
+    if ((url.pathname === "/api/silver" || url.pathname === "/api/silver/") && request.method === "GET") {
+      return silverEndpoint(request,ctx);
+    }
+    if ((url.pathname === "/api/city-gold" || url.pathname === "/api/city-gold/") && request.method === "GET") {
+      return cityGoldEndpoint(request,env,ctx);
+    }
     if (url.pathname === "/api/market" && request.method === "GET") {
       return marketResponse(request, ctx);
+    }
+
+    if (url.pathname === "/api/pulse" && request.method === "GET") {
+      const symbol = validPulseSymbol(url.searchParams.get("symbol") || "^NSEI");
+      if (!symbol) return json({ok:false,error:"Use a valid NSE ticker ending .NS, BSE ticker ending .BO, or the Indian Market option."},400,{"cache-control":"no-store"});
+      try {
+        const cache = caches.default;
+        const cacheKey = new Request(`${url.origin}/api/pulse?symbol=${encodeURIComponent(symbol)}&v=1`);
+        const cached = await cache.match(cacheKey);
+        if (cached) return cached;
+        const payload = await buildPulsePayload(symbol);
+        const response = json(payload,payload.ok?200:502,{"cache-control":"public, max-age=12, s-maxage=12"});
+        if(payload.ok) ctx.waitUntil(cache.put(cacheKey,response.clone()));
+        return response;
+      }catch(e){return json({ok:false,error:e?.message||"Pulse service temporarily unavailable"},502,{"cache-control":"no-store"});}
     }
 
     if (url.pathname === "/api/sector" && request.method === "GET") {
