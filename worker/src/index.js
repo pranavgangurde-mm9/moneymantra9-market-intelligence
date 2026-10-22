@@ -24,6 +24,9 @@ const SECTOR_SYMBOLS = {
 };
 
 
+const FULL_SECTOR_INDEX_NAMES = ["Auto", "Banking", "Capital Goods", "Cement", "Chemicals", "Commercial & Transport Services", "Construction", "Consumer Durables", "Consumer Services", "Financial Services", "Financial Services 25/50", "Financial Services Ex Bank", "FMCG", "Healthcare", "Hospitals", "Housing Finance", "Insurance", "IT", "Media", "Metal", "NBFC", "Oil and Gas", "Pharma", "Power", "Private Bank", "PSU Bank", "Realty", "REITs & Realty", "Retail", "Telecommunications", "Nifty500 Healthcare", "MidSmall Financial Services", "MidSmall Healthcare", "MidSmall IT & Telecom"];
+const OFFICIAL_SECTOR_CONSTITUENT_FILES = {"IT": "ind_niftyitlist.csv", "Auto": "ind_niftyautolist.csv", "Banking": "ind_niftybanklist.csv", "Pharma": "ind_niftypharmalist.csv", "FMCG": "ind_niftyfmcglist.csv", "Metal": "ind_niftymetallist.csv", "Realty": "ind_niftyrealtylist.csv", "PSU Bank": "ind_niftypsubanklist.csv", "Financial Services": "ind_niftyfinancelist.csv", "Media": "ind_niftymedialist.csv", "Healthcare": "ind_niftyhealthcarelist.csv", "Private Bank": "ind_niftyprivatebanklist.csv", "Consumer Durables": "ind_niftyconsumerdurableslist.csv", "Oil and Gas": "ind_niftyoilgaslist.csv"};
+
 const SECTOR_META = {
   "IT": {
     slug: "nifty-it",
@@ -139,16 +142,21 @@ async function fetchYahooChart(symbol, interval = "5m", range = "1d") {
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
     `?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}&includePrePost=false`;
 
-  const r = await fetch(target, {
-    headers: {
-      "accept": "application/json,text/plain,*/*",
-      "user-agent": "Mozilla/5.0 (compatible; MM9-Market-Intelligence/2.0)"
-    },
-    cf: { cacheTtl: 10, cacheEverything: true }
-  });
-
-  if (!r.ok) throw new Error(`Yahoo ${symbol}: HTTP ${r.status}`);
-  const j = await r.json();
+  const abort=new AbortController();
+  const timer=setTimeout(()=>abort.abort(),8500);
+  let j;
+  try{
+    const r = await fetch(target, {
+      signal:abort.signal,
+      headers: {
+        "accept": "application/json,text/plain,*/*",
+        "user-agent": "Mozilla/5.0 (compatible; MM9-Market-Intelligence/2.0)"
+      },
+      cf: { cacheTtl: 10, cacheEverything: true }
+    });
+    if (!r.ok) throw new Error(`Yahoo ${symbol}: HTTP ${r.status}`);
+    j = await r.json();
+  }finally{clearTimeout(timer)}
   const result = j?.chart?.result?.[0];
   if (!result) throw new Error(`Yahoo ${symbol}: no result`);
   return result;
@@ -209,6 +217,7 @@ function normalizeChart(result, includeTimeline = false) {
       if (mins >= 555 && mins <= 930) {
         out.timeline.push({
           time,
+          price:c,
           pct: ((c - prev) / prev) * 100
         });
       }
@@ -220,44 +229,23 @@ function normalizeChart(result, includeTimeline = false) {
 
 
 async function buildSectorPayload(name) {
-  const symbol = sectorSymbol(name);
-  if (!symbol) return { ok: false, error: "Unknown sector." };
-
-  const [dayR, fiveR, monthR] = await Promise.allSettled([
-    fetchYahooChart(symbol, "5m", "1d"),
-    fetchYahooChart(symbol, "15m", "5d"),
-    fetchYahooChart(symbol, "1d", "1mo")
-  ]);
-
-  if (dayR.status !== "fulfilled") {
-    return { ok: false, error: dayR.reason?.message || "Sector quote unavailable." };
+  const symbol=sectorSymbol(name),known=FULL_SECTOR_INDEX_NAMES.includes(name)||['Energy','Infrastructure'].includes(name);
+  if(!known)return {ok:false,error:'Unknown index name'};
+  const meta=SECTOR_META[name]||{},base={ok:true,name,scope:meta.scope||`Nifty ${name} is an NSE sectoral index. View the official index page for current definitions and methodology.`,drivers:meta.drivers||'Earnings, industry demand, macroeconomic conditions and policy.',officialLink:officialSectorLink(name),quoteLink:symbol?quoteLink(symbol):null,source:'NSE Indices documentation',sector:{name,symbol,price:null,pct:null,timeline:[]},return5d:null,return1m:null,dataAsOf:null,priceAvailable:false};
+  if(!symbol)return {...base,note:'No verified free public quote adapter mapped for this newer NSE index.'};
+  const [dayR,fiveR,monthR]=await Promise.allSettled([fetchYahooChart(symbol,'5m','1d'),fetchYahooChart(symbol,'1d','5d'),fetchYahooChart(symbol,'1d','1mo')]);
+  if(dayR.status==='fulfilled'){
+    const sector=normalizeChart(dayR.value,true);
+    if(sector.price!==null&&sector.pct!==null){
+      const epoch=sector.epoch;
+      base.sector={...sector,name,symbol};base.priceAvailable=true;base.source='Yahoo Finance public chart (delayed)';
+      if(epoch)base.dataAsOf=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000))+' IST';
+    }
   }
-
-  const sector = normalizeChart(dayR.value, true);
-  sector.name = name;
-  sector.symbol = symbol;
-
-  const meta = SECTOR_META[name] || {};
-  let dataAsOf = null;
-  if (sector.epoch) {
-    dataAsOf = new Intl.DateTimeFormat("en-IN", {
-      timeZone: "Asia/Kolkata",
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: false
-    }).format(new Date(sector.epoch * 1000)) + " IST";
-  }
-
-  return {
-    ok: true,
-    sector,
-    return5d: fiveR.status === "fulfilled" ? rangeReturn(fiveR.value) : null,
-    return1m: monthR.status === "fulfilled" ? rangeReturn(monthR.value) : null,
-    scope: meta.scope || `${name} is an Indian NSE-linked sector index.`,
-    drivers: meta.drivers || "Sector-specific demand, earnings, policy and macro conditions.",
-    officialLink: officialSectorLink(name),
-    quoteLink: quoteLink(symbol),
-    dataAsOf
-  };
+  if(fiveR.status==='fulfilled')base.return5d=rangeReturn(fiveR.value);
+  if(monthR.status==='fulfilled')base.return1m=rangeReturn(monthR.value);
+  if(!base.priceAvailable)base.note='No currently accessible chart quote; official index scope/constituents are still available.';
+  return base;
 }
 
 function parseJsonObject(text) {
@@ -376,6 +364,49 @@ Instructions:
   }
 
   return { ok: true, insight, sources: sources.slice(0, 5) };
+}
+
+async function sectorConstituents(name,ctx){
+ if(!FULL_SECTOR_INDEX_NAMES.includes(name))return {ok:false,error:'Unknown index'};
+ const file=OFFICIAL_SECTOR_CONSTITUENT_FILES[name];
+ const base='https://www.niftyindices.com/IndexConstituent/';
+ if(!file)return {ok:false,error:'Public CSV mapping not confirmed for this index. Use the NSE Indices download link.',sourceUrl:officialSectorLink(name)};
+ const link=base+file;
+ try{
+  const r=await fetch(link,{headers:{accept:'text/csv,application/octet-stream,text/plain'},cf:{cacheTtl:21600,cacheEverything:true}});
+  if(!r.ok)return {ok:false,error:`NSE constituent download returned HTTP ${r.status}`,sourceUrl:link};
+  const t=await r.text();if(t.length>1500000)throw Error('CSV size too large');
+  const lines=t.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+  if(lines.length<3)throw Error('No constituent rows returned');
+  const header=readCsvLine(lines.shift()).map(x=>x.trim().toLowerCase());
+  const si=header.findIndex(x=>/symbol/.test(x)),ni=header.findIndex(x=>/company|name/.test(x));
+  if(si<0)throw Error('Unexpected CSV header');
+  const items=lines.map(line=>readCsvLine(line)).map(cols=>({symbol:(cols[si]||'').trim(),name:(cols[ni]||'').trim()})).filter(x=>/^[A-Z0-9&-]{1,25}$/.test(x.symbol)).slice(0,80);
+  if(!items.length)throw Error('No valid stock symbols in constituent file');
+  return {ok:true,items,sourceUrl:link,sourceDate:'Published file; review NSE methodology for reconstitution date',source:'NSE Indices constituent CSV'};
+ }catch(e){return {ok:false,error:e.message||String(e),sourceUrl:link}}
+}
+
+async function computeNiftyBreadth(){
+ // Prefer a single official exchange response. Do not use 51 external requests
+ // (Free Workers currently permit 50 external subrequests per invocation).
+ const url='https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050';
+ try{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8500);
+  let data;
+  try{
+   const r=await fetch(url,{signal:controller.signal,headers:{accept:'application/json','user-agent':'Mozilla/5.0 (compatible; MM9 MarketWatch/1.0)','referer':'https://www.nseindia.com/market-data/live-market-indices'},cf:{cacheTtl:900,cacheEverything:true}});
+   if(!r.ok)throw Error('Exchange API returned HTTP '+r.status);
+   data=await r.json();
+  }finally{clearTimeout(timer)}
+  const rows=Array.isArray(data.data)?data.data:[];
+  const constituents=rows.filter(x=>x?.symbol&&x.symbol!=='NIFTY 50'&&x.symbol!=='NIFTY50'&&num(x.pChange)!==null);
+  if(constituents.length!==50)throw Error(`Received ${constituents.length} valid constituent changes instead of 50`);
+  const changes=constituents.map(x=>num(x.pChange));
+  return {ok:true,adv:changes.filter(x=>x>0).length,dec:changes.filter(x=>x<0).length,unchanged:changes.filter(x=>x===0).length,coverage:50,asOf:data.timestamp||'Exchange timestamp unavailable',source:'NSE 50 constituent change snapshot',sourceUrl:'https://www.nseindia.com/market-data/live-market-indices'};
+ }catch(error){
+  return {ok:false,error:'NSE 50-constituent source unavailable: '+(error?.message||String(error)),sourceUrl:'https://www.nseindia.com/market-data/live-market-indices'};
+ }
 }
 
 async function buildMarketPayload() {
@@ -1186,6 +1217,18 @@ export default {
       }catch(e){return json({ok:false,error:e?.message||"Pulse service temporarily unavailable"},502,{"cache-control":"no-store"});}
     }
 
+    if(url.pathname==='/api/sector-constituents'&&request.method==='GET'){
+      const name=String(url.searchParams.get('name')||'').trim();
+      const payload=await sectorConstituents(name,ctx);
+      return json(payload,payload.ok?200:503,{'cache-control':payload.ok?'public, max-age=3600, s-maxage=21600':'no-store'});
+    }
+    if(url.pathname==='/api/breadth'&&request.method==='GET'){
+      const cache=caches.default,key=new Request(`${url.origin}/api/breadth?v=r3`);
+      const saved=await cache.match(key);if(saved)return saved;
+      try{const result=await computeNiftyBreadth();const r=json(result,result.ok?200:503,{'cache-control':result.ok?'public, max-age=900, s-maxage=900':'no-store'});
+       if(result.ok)ctx.waitUntil(cache.put(key,r.clone()));return r;}
+      catch(e){return json({ok:false,error:String(e)},503,{'cache-control':'no-store'})}
+    }
     if (url.pathname === "/api/sector" && request.method === "GET") {
       const name = String(url.searchParams.get("name") || "").trim();
       if (!name) return json({ ok: false, error: "Sector name is required." }, 400, { "cache-control": "no-store" });
