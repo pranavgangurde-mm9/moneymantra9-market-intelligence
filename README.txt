@@ -1,14 +1,2 @@
-MoneyMantra 9 Market Intelligence — Sector Intelligence Build
-
-New:
-- rich sector drill-down
-- intraday sector chart
-- 5-day and 1-month momentum
-- relative performance vs Nifty
-- official Nifty Indices link
-- public quote link
-- AI/web-grounded “Why today”
-- What / Why / How / Next step investor framework
-- transparent fallback when a current catalyst cannot be verified
-
-See SECTOR_INTELLIGENCE_SETUP.md.
+MoneyMantra 9 Market Intelligence: Gold/Silver Live Spot, Indian City Gold Retail Benchmarks, Singapore STI and SGX Session Monitor
+See CITY_GOLD_SILVER_SGX_SETUP.md for deployment and caveats.

@@ -67,6 +67,10 @@ main{padding:12px}
 .slot{min-width:75px;border:1px solid var(--line);border-radius:11px;padding:8px;background:#fff}.slot b{font-size:10px}.slot small{display:block;font-size:8px;color:var(--muted);margin-top:3px}.slot .pct{font-size:11px;font-weight:950;margin-top:4px}
 .axis{font-size:8px;fill:#7C878D}.gridline{stroke:#E6EBE8;stroke-width:1}.zeroline{stroke:#BFCAC5;stroke-width:1;stroke-dasharray:3 3}.trendline{fill:none;stroke:#28719F;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.trendarea{fill:rgba(40,113,159,.08)}
 .sector{display:grid;grid-template-columns:1.2fr .8fr .45fr;gap:7px;padding:9px 0;border-bottom:1px solid var(--line);font-size:11px;align-items:center}.sector:last-child{border:0}
+.sector.clickable{cursor:pointer;touch-action:manipulation}
+.sector-unavailable{color:var(--muted)}
+.sector-quote-note{font-size:9px;color:var(--muted);margin-top:2px}
+.market-feed-note{font-size:10.5px;line-height:1.5;padding:11px 12px;margin:0 0 10px;background:var(--asoft);border:1px solid #F1D99C;border-radius:12px;color:#775517}
 .radar{position:relative;width:258px;height:258px;margin:8px auto}.ring{position:absolute;inset:0;border:1px solid #DEE6E2;border-radius:50%}.ring.r2{inset:35px}.ring.r3{inset:70px}.center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:88px;height:88px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;text-align:center}
 .node{position:absolute;padding:7px 8px;border-radius:11px;border:1px solid var(--line);background:#fff;font-size:9px;font-weight:900;box-shadow:0 4px 11px rgba(17,32,43,.06)}.n1{top:2px;left:94px}.n2{top:52px;right:0}.n3{top:160px;right:0}.n4{bottom:0;left:95px}.n5{top:160px;left:0}.n6{top:52px;left:0}
 .chat{height:275px;overflow-y:auto;border:1px solid var(--line);background:#F7F9F8;border-radius:15px;padding:10px;display:flex;flex-direction:column;gap:8px}.msg{max-width:86%;padding:10px 11px;border-radius:13px;font-size:11px;line-height:1.48}.bot{align-self:flex-start;background:#fff;border:1px solid var(--line)}.user{align-self:flex-end;background:var(--navy);color:#fff}.chatrow{display:flex;gap:8px;margin-top:8px}.chatrow input{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 11px;font-size:11px;outline:none}
@@ -119,6 +123,71 @@ main{padding:12px}
 
 
 @media(min-width:700px){body{padding:20px}.app{border-radius:26px;overflow:hidden;box-shadow:0 24px 60px rgba(17,32,43,.15);min-height:860px}.tabs{bottom:20px;border-radius:0 0 26px 26px}.refreshbar{top:94px}}
+
+
+
+/* Compact new-market cards */
+.sessiongrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.sessionbox{min-width:0;word-break:normal}.sessionbox b{font-size:10px;line-height:1.2}.sessionbox span{font-size:9px;line-height:1.35}
+.overview-extra{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.overview-extra .mini{min-width:0;padding:10px 8px}.overview-extra .mini .v{font-size:15px;overflow-wrap:anywhere}
+.overview-extra .mini .s{font-size:9px}.overview-extra .mini .k{font-size:10px}
+.city-controls{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.city-controls select{font-size:12px;flex:1;min-width:120px;padding:10px;border-radius:10px;border:1px solid var(--line);background:white;color:var(--navy)}
+.city-price-table{width:100%;border-collapse:collapse;font-size:11px}.city-price-table th,.city-price-table td{padding:9px 6px;border-bottom:1px solid var(--line);text-align:right}.city-price-table th:first-child,.city-price-table td:first-child{text-align:left}
+.city-rate-note{font-size:10px;line-height:1.5;color:var(--muted);margin-top:8px}
+.compact-source{font-size:9px;color:var(--muted);margin-top:5px;line-height:1.5}
+@media(max-width:390px){.overview-extra{grid-template-columns:repeat(2,minmax(0,1fr))}.sessiongrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Gold Watch: compact tile and expandable live-rate details */
+.gold-peek{display:flex;align-items:center;gap:11px;justify-content:space-between;cursor:pointer;touch-action:manipulation}
+.gold-symbol{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(150deg,#FDF2CF,#F4D686);color:#765317;font-size:23px;flex:none}
+.gold-title{font-size:13px;font-weight:900;line-height:1.15}
+.gold-subtitle{font-size:9px;color:var(--muted);margin-top:4px;line-height:1.45}
+.gold-peek-metrics{display:flex;gap:13px;margin-top:11px;align-items:center;flex-wrap:wrap}
+.gold-peek-kpi{font-size:17px;font-weight:950;color:var(--navy)}
+.gold-peek-kpi span{display:block;font-size:9px;color:var(--muted);font-weight:700;margin-bottom:4px}
+.gold-arrow{font-weight:950;color:#846319;white-space:nowrap;font-size:12px}
+.gold-status{font-size:9px;color:var(--muted);margin-top:10px;line-height:1.4}
+.gold-note{background:#FFF9ED;border:1px solid #F3E2BB;border-radius:11px;padding:10px;font-size:10px;line-height:1.5;color:#705725;margin-top:10px}
+.gold-toggle{display:flex;gap:6px;margin:11px 0 9px}.gold-toggle button{flex:1;border:1px solid #DDD7CA;padding:9px 7px;border-radius:10px;background:#fff;color:var(--navy);font-size:10px;font-weight:900}
+.gold-toggle button.active{background:#10344B;color:#fff;border-color:#10344B}
+.gold-rates{width:100%;border-collapse:collapse;background:#fff;font-size:11px}
+.gold-rates th,.gold-rates td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.gold-rates th:first-child,.gold-rates td:first-child{text-align:left}.gold-rates th{font-size:9px;color:var(--muted);font-weight:800}
+.gold-rates td:first-child b{display:block;font-size:12px}.gold-rates td:first-child small{color:var(--muted);font-size:9px}
+.gold-rates td strong{color:var(--green);font-size:12px}
+.gold-control-label{font-size:10px;font-weight:900;display:block;margin:9px 0 5px}
+.gold-premium{width:100%;accent-color:#C19C39}.gold-pick{padding:10px;border-radius:12px;background:#FBF9F4;border:1px solid #ECE3D1}
+.gold-links{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.gold-links a{display:inline-flex;padding:7px 9px;background:#EDF2F0;color:var(--navy);border-radius:20px;text-decoration:none;font-size:9px;font-weight:850;border:1px solid var(--line)}
+.gold-timestamps{font-size:9px;color:var(--muted);line-height:1.65;margin-top:8px}
+
+/* Stock watch and multi-timeframe pulse controls */
+.watch-panel{margin:0 0 11px;padding:13px;border:1px solid var(--line);background:#fff;border-radius:18px;box-shadow:0 4px 14px rgba(17,32,43,.04)}
+.watch-title{font-size:13px;font-weight:900;margin:0 0 9px;color:var(--ink)}
+.watch-search-row{display:flex;gap:7px;align-items:stretch}
+.watch-search-row input{width:100%;flex:1;min-width:0;border-radius:11px;border:1px solid var(--line);padding:10px;font-size:12px;background:#fff;color:var(--ink)}
+.watch-search-row button{flex:0 0 auto}
+.quick-stocks{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.quick-stocks button{border:1px solid var(--line);border-radius:999px;padding:6px 9px;background:#EDF2F0;color:var(--navy);font-size:10px;font-weight:800}
+.watch-status{font-size:10px;line-height:1.45;color:var(--muted);margin-top:8px}
+.pulse-tabs{display:flex;gap:6px;overflow:auto;padding:4px 0 7px;margin-bottom:7px;scrollbar-width:thin}
+.pulse-tab{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 10px;color:var(--navy);font-weight:900;font-size:11px;min-width:71px;text-align:center}
+.pulse-tab small{display:block;font-weight:500;font-size:8px;color:var(--muted);margin-top:3px}
+.pulse-tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}.pulse-tab.active small{color:#dbe8ef}
+.pulse-note{font-size:10px;line-height:1.4;color:var(--muted);margin-bottom:9px}
+.period-hero{background:linear-gradient(140deg,#123B56,#0C2A3E);color:#fff;border-radius:20px;padding:17px;margin-bottom:12px;box-shadow:var(--shadow)}
+.period-tag{display:inline-block;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.11);border-radius:999px;padding:5px 8px;font-size:9px;margin-top:6px}
+.period-score{font-size:42px;font-weight:950;line-height:1.04;margin:12px 0 2px}.period-state{font-size:17px;font-weight:900}
+.period-kpis{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.period-kpis div{border-top:1px solid rgba(255,255,255,.17);padding-top:8px}.period-kpis small{display:block;color:#c2d7e3;font-size:9px}.period-kpis b{font-size:13px}
+.period-extra{font-size:10px;color:#c2d7e3;line-height:1.45;margin-top:10px}
+.journal-table{width:100%;border-collapse:collapse;font-size:10px}.journal-table th,.journal-table td{text-align:left;border-bottom:1px solid var(--line);padding:7px 3px}
+.journal-bar{width:100%;height:7px;background:#e8eeeb;border-radius:999px;overflow:hidden;margin:8px 0}.journal-bar span{display:block;background:#228665;height:100%;width:0}
+.journal-status{font-size:10px;color:var(--muted);line-height:1.5}
+@media(max-width:340px){.pulse-tab{padding:7px}.watch-search-row button{padding:9px 7px}}
+
 </style>
 </head>
 <body>
@@ -148,6 +217,59 @@ main{padding:12px}
 
 <main>
 <section id="home" class="section active">
+ <div class="watch-panel">
+  <h3 class="watch-title">Choose what to watch</h3>
+  <div class="watch-search-row">
+   <input id="watchSearch" list="stockOptions" placeholder="NSE symbol or company · RELIANCE.NS" aria-label="Search NSE or BSE stock" onkeydown="if(event.key==='Enter')submitStockSearch()"/>
+   <datalist id="stockOptions">
+    <option value="RELIANCE.NS">Reliance Industries</option><option value="INFY.NS">Infosys</option><option value="TCS.NS">TCS</option><option value="HDFCBANK.NS">HDFC Bank</option>
+    <option value="ICICIBANK.NS">ICICI Bank</option><option value="SBIN.NS">State Bank of India</option><option value="BHARTIARTL.NS">Airtel</option>
+   </datalist>
+   <button class="btn primary" onclick="submitStockSearch()">Watch</button>
+  </div>
+  <div class="quick-stocks">
+   <button onclick="setMarketWatch()">Market (Nifty)</button>
+   <button onclick="selectQuickStock('RELIANCE.NS')">Reliance</button>
+   <button onclick="selectQuickStock('INFY.NS')">Infosys</button>
+   <button onclick="selectQuickStock('TCS.NS')">TCS</button>
+  </div>
+  <div id="watchStatus" class="watch-status">Watching Indian Market · NSE stock lookup also available using the exchange ticker (.NS or .BO).</div>
+ </div>
+ <div class="pulse-tabs" role="group" aria-label="Pulse timeframe">
+   <button class="pulse-tab active" data-pulse-frame="current" aria-pressed="true" onclick="switchPulseFrame('current')">Current<small>15 sec check</small></button>
+   <button class="pulse-tab" data-pulse-frame="m15" aria-pressed="false" onclick="switchPulseFrame('m15')">15 Min<small>15-min candle</small></button>
+   <button class="pulse-tab" data-pulse-frame="m30" aria-pressed="false" onclick="switchPulseFrame('m30')">30 Min<small>30-min candle</small></button>
+   <button class="pulse-tab" data-pulse-frame="h1" aria-pressed="false" onclick="switchPulseFrame('h1')">1 Hour<small>60-min candle</small></button>
+   <button class="pulse-tab" data-pulse-frame="d1" aria-pressed="false" onclick="switchPulseFrame('d1')">Daily<small>Market close</small></button>
+ </div>
+ <div id="periodHelp" class="pulse-note">Intraday Pulse is based on completed Nifty candles with Bank Nifty/Sensex confirmation when available. The daily signal uses completed closes.</div>
+ <div id="stockSnapshot" class="card" style="display:none;margin:0 0 12px">
+   <h3><span id="stockLabel">Selected stock</span> <small id="stockTicker" style="font-size:10px;color:var(--muted)"></small></h3>
+   <div class="grid2"><div class="mini"><div class="k">Latest available share price</div><div id="stockPrice" class="v">—</div></div><div class="mini"><div class="k">Change vs prior close</div><div id="stockMove" class="v">—</div></div></div>
+   <div class="ss" id="stockSource" style="margin-top:7px">Waiting for stock quote…</div>
+ </div>
+ <div id="framePulseSection" style="display:none">
+  <div class="period-hero">
+    <div class="eyebrow" id="frameTitle">15 Minute Market Pulse</div>
+    <div class="period-tag" id="frameCadence">Completed candle</div>
+    <div id="frameScore" class="period-score">—</div><div class="period-state" id="frameSignal">AWAITING DATA</div>
+    <div class="period-kpis">
+      <div><small>Change over selected period</small><b id="frameChange">—</b></div>
+      <div><small>End-of-period level</small><b id="frameLevel">—</b></div>
+      <div><small>Data observation time</small><b id="frameTime">—</b></div>
+      <div><small>Indicator coverage</small><b id="frameAgreement">—</b></div>
+      <div><small>Signal agreement (not probability)</small><b id="frameConfidence">—</b></div>
+    </div>
+    <div id="frameCaution" class="period-extra">Observed momentum only, not a prediction.</div>
+  </div>
+  <div class="card" style="margin:0 0 12px"><h3>Period update</h3>
+   <div class="ss" id="frameNext">Updated at completed periods</div>
+   <div class="ss" id="frameFetchStatus" style="margin-top:5px">Connecting to source…</div>
+   <button class="btn soft" style="margin-top:8px" onclick="loadWatchPulse(true)">Check period data</button>
+  </div>
+ </div>
+ <div id="currentPulseSection">
+
  <div class="hero">
   <div class="herohead"><div><div class="eyebrow">Current Market Pulse</div><div class="time" id="dataTime">Waiting for source refresh</div></div><div id="heroSource" class="source-state">SOURCE CHECK</div></div>
   <div class="pulse">
@@ -160,6 +282,7 @@ main{padding:12px}
   </div>
  </div>
  <div id="staleNote" class="stale-note" style="display:none"></div>
+ </div> <!-- Current pulse visible only on Market / Current -->
 
  <div class="card">
   <h3>Live Market Overview</h3>
@@ -172,20 +295,35 @@ main{padding:12px}
    <div class="mini clickable" onclick="openDetail('vix')"><div class="k">India VIX</div><div id="vixVal" class="v">--</div><div id="vixPct" class="s">--</div><div class="detailhint">Tap for details ›</div></div>
    <div class="mini clickable" onclick="openDetail('gift')"><div class="k">GIFT Nifty</div><div id="giftVal" class="v">--</div><div id="giftPct" class="s">--</div><div class="detailhint">Tap for details ›</div></div>
   </div>
+  <div class="overview-extra" aria-label="Gold silver and Singapore overview">
+    <div class="mini clickable" onclick="openGoldDetail()" role="button" tabindex="0"><div class="k">Gold · 24K/g</div><div id="ovGold" class="v">—</div><div class="s">Spot INR equivalent · tap</div></div>
+    <div class="mini clickable" onclick="openSilverDetail()" role="button" tabindex="0"><div class="k">Silver · 999/g</div><div id="ovSilver" class="v">—</div><div class="s">Spot INR equivalent · tap</div></div>
+    <div class="mini clickable" onclick="openDetail('sgx')" role="button" tabindex="0"><div class="k">SGX · STI</div><div id="ovSGX" class="v">—</div><div id="ovSGXPct" class="s">Singapore · tap</div></div>
+   </div>
  </div>
 
  <div class="card">
-  <h3>Live-Data Market Explanation</h3>
+  <h3>Broad Market Explanation · Nifty / Sensex</h3>
   <div class="explain"><div style="font-size:18px">✦</div><div><div id="marketExplain">Refresh live data to build the current market explanation from the Worker response.</div><div id="explainSource" class="ss" style="margin-top:6px"></div></div></div>
  </div>
 
  <div class="card">
-  <h3>Trend Timeline · 09:15 to 15:30 IST</h3>
+  <h3>Nifty 50 Trend Timeline · 09:15 to 15:30 IST</h3>
   <div class="timeline-wrap">
    <div class="chartbox"><svg id="trendSvg" viewBox="0 0 440 170" preserveAspectRatio="none"></svg></div>
    <div id="slotRow" class="slotrow"></div>
   </div>
   <div class="ss" style="margin-top:7px">The timeline fills through the session. After market close, the full day remains available in the chart.</div>
+ </div>
+
+ <div class="card">
+   <h3>20-Trading-Day Observation Log</h3>
+   <div id="trialProgress" class="journal-status">0 / 20 sessions recorded on this browser</div>
+   <div class="journal-bar"><span id="trialBar"></span></div>
+   <div class="journal-status">A separate daily observation is saved when this browser retrieves a completed trading-day pulse. This helps clients compare values with official data over time; it is not a verified performance/forecast-accuracy test.</div>
+   <div style="overflow:auto;margin:9px 0"><table class="journal-table"><thead><tr><th>Session</th><th>Close</th><th>Move</th><th>Label</th></tr></thead><tbody id="trialRows"></tbody></table></div>
+   <button class="btn soft" onclick="exportPulseJournal()">Export observations (CSV)</button>
+   <div class="ss" style="margin-top:8px">Saved on this device/browser only; clearing site data removes the log. A background server scheduler would be required for unattended multi-user monitoring.</div>
  </div>
 
  <div class="disclaimer">Market data shown by this build comes from public web-source adapters when accessible, with a dated fallback source snapshot if direct refresh is unavailable. Data may be delayed. This dashboard is for market education and analytics, not personalized investment advice or a trading recommendation.</div>
@@ -211,21 +349,42 @@ main{padding:12px}
   <div class="sessiongrid">
    <div class="sessionbox clickable" onclick="openDetail('indiaSession')"><b>India</b><span id="indiaSession">--</span></div>
    <div class="sessionbox clickable" onclick="openDetail('gift')"><b>GIFT Nifty</b><span id="giftSession">--</span></div>
-   <div class="sessionbox clickable" onclick="openDetail('global')"><b>US Markets</b><span id="usSession">--</span></div>
+    <div class="sessionbox clickable" onclick="openDetail('global')"><b>US Markets</b><span id="usSession">--</span></div>
+    <div class="sessionbox clickable" onclick="openDetail('sgx')"><b>Singapore · SGX</b><span id="sgxSession">--</span></div>
+    <div class="sessionbox clickable" onclick="openGoldDetail()"><b>Gold · spot</b><span id="goldSession">Quote pending</span></div>
+    <div class="sessionbox clickable" onclick="openSilverDetail()"><b>Silver · spot</b><span id="silverSession">Quote pending</span></div>
   </div>
-  <div class="ss" style="margin-top:8px">The app checks active market sources every 15 seconds. After the Indian cash market closes, its last successful snapshot is retained while eligible GIFT/global sources can continue updating. Each market keeps its own session status and timestamp.</div>
+  <div class="ss" style="margin-top:8px">Indian cash equities, Singapore equities, US markets, GIFT Nifty and international metal spot quotes follow different sessions. Market data availability is source-dependent; weekend and exchange holiday schedules may differ.</div>
  </div>
 
  <div class="card">
   <h3>Global & Pre-Market Cues</h3>
+  <div class="market-feed-note" id="marketFeedNotice">Connecting to the MoneyMantra 9 Cloudflare market service. Public quote coverage may vary by index.</div>
   <div class="signal"><div class="sl"><span id="giftDot" class="dot a"></span><div><div class="st">GIFT Nifty</div><div class="ss">Last verified GIFT quote · session timing from NSE IX</div></div></div><div id="giftMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="nasdaqDot" class="dot b"></span><div><div class="st">Nasdaq Composite</div><div class="ss">US close / latest public quote</div></div></div><div id="nasdaqMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="spDot" class="dot b"></span><div><div class="st">S&P 500</div><div class="ss">US close / latest public quote</div></div></div><div id="spMarket" class="sv">--</div></div>
-  <div class="signal"><div class="sl"><span id="nikkeiDot" class="dot b"></span><div><div class="st">Nikkei 225</div><div class="ss">Asian market cue</div></div></div><div id="nikkeiMarket" class="sv">--</div></div>
+   <div class="signal"><div class="sl"><span id="nikkeiDot" class="dot b"></span><div><div class="st">Nikkei 225</div><div class="ss">Asian market cue</div></div></div><div id="nikkeiMarket" class="sv">--</div></div>
+   <div class="signal clickable" onclick="openDetail('sgx')"><div class="sl"><span id="sgxDot" class="dot b"></span><div><div class="st">Singapore · Straits Times Index (STI)</div><div class="ss">SGX equity-market benchmark · separate from GIFT Nifty</div></div></div><div id="sgxMarket" class="sv">--</div></div>
  </div>
 
- <div class="card">
-  <h3>Nifty 50 Breadth</h3>
+ <div class="card" id="goldWatchCard">
+  <div class="gold-peek" role="button" tabindex="0" aria-label="Open gold rates for 18, 20, 22, 23 and 24 karat" onclick="openGoldDetail()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openGoldDetail()}">
+   <div class="gold-symbol" aria-hidden="true">◆</div>
+   <div style="flex:1;min-width:0"><div class="gold-title">Gold Watch <span class="badge">INDICATIVE</span></div>
+    <div class="gold-subtitle">Spot-derived rates + city retail benchmarks</div></div>
+   <div class="gold-arrow">View 5 rates ›</div>
+  </div>
+  <div class="gold-peek-metrics">
+   <div class="gold-peek-kpi"><span>22K / gram</span><b id="gold22Peek">—</b></div>
+   <div class="gold-peek-kpi"><span>24K / gram</span><b id="gold24Peek">—</b></div>
+  </div>
+  <div id="goldPeekStatus" class="gold-status">Connecting to the gold-rate feed…</div>
+ </div>
+
+  <div class="card clickable" role="button" tabindex="0" onclick="openSilverDetail()"><div class="gold-peek"><div class="gold-symbol" aria-hidden="true" style="background:#E9EEF1;color:#657A8A">◈</div><div style="flex:1;min-width:0"><div class="gold-title">Silver Watch <span class="badge">SPOT</span></div><div class="gold-subtitle">International XAG/USD → INR; 999 fine indicative</div></div><div class="gold-arrow">Details ›</div></div><div class="gold-peek-metrics"><div class="gold-peek-kpi"><span>999 Silver / gram</span><b id="silverPeek">—</b></div><div class="gold-peek-kpi"><span>Per kilogram</span><b id="silverKilo">—</b></div></div><div id="silverPeekStatus" class="gold-status">Waiting for live source…</div></div>
+
+  <div class="card">
+   <h3>Nifty 50 Breadth</h3>
   <div class="grid2">
    <div class="mini"><div class="k">Advances</div><div id="advVal" class="v up">--</div><div class="s">Nifty 50 constituents</div></div>
    <div class="mini"><div class="k">Declines</div><div id="decVal" class="v down">--</div><div class="s">Nifty 50 constituents</div></div>
@@ -275,7 +434,7 @@ main{padding:12px}
 <section id="more" class="section">
  <div class="card">
   <h3>Refresh & Alerts</h3>
-  <div class="toggle">Auto-refresh 15 seconds after each completed refresh<div id="autoSwitch" class="switch on" onclick="toggleAuto()"></div></div>
+  <div class="toggle">Current check: 15 seconds after each refresh<div id="autoSwitch" class="switch on" onclick="toggleAuto()"></div></div>
   <div class="toggle">Trend-change alert<div class="switch on" onclick="this.classList.toggle('on')"></div></div>
   <div class="toggle">Volatility alert<div class="switch on" onclick="this.classList.toggle('on')"></div></div>
   <div class="toggle">Breadth alert<div class="switch on" onclick="this.classList.toggle('on')"></div></div>
@@ -283,6 +442,7 @@ main{padding:12px}
 
  <div class="card">
   <h3>Data Source Centre</h3>
+     <div class="signal clickable" onclick="openGoldDetail()"><div><div class="st">Gold Watch · International spot + city retail</div><div class="ss">Gold-API spot + daily USD/INR FX · tap for prices and timestamp</div></div><span class="badge">GOLD</span></div>
   <div class="signal"><div><div class="st">Cloudflare Data Proxy</div><div class="ss" id="proxyStatus">Configure config.js with your workers.dev URL</div></div><span class="badge">PROXY</span></div>
   <a class="source-link" href="https://www.nseindia.com/" target="_blank"><div class="signal"><div><div class="st">NSE India</div><div class="ss">Official Indian exchange reference</div></div><span class="badge">OFFICIAL</span></div></a>
   <a class="source-link" href="https://www.nseix.com/" target="_blank"><div class="signal"><div><div class="st">NSE IX</div><div class="ss">Official GIFT Nifty reference</div></div><span class="badge">OFFICIAL</span></div></a>
@@ -320,8 +480,14 @@ main{padding:12px}
 
 <script src="config.js"></script>
 <script>
-const API_BASE=((window.MM9_CONFIG&&window.MM9_CONFIG.API_BASE)||"").replace(/\/$/,"");
+const API_BASE=((window.MM9_CONFIG&&window.MM9_CONFIG.API_BASE)||"https://mm9-market-proxy.pranav-gangurde1.workers.dev").replace(/\/$/,"");
 const IST='Asia/Kolkata';
+let goldQuote=null;
+let goldLastCheckedMs=0;
+let goldFetchInFlight=false;
+let goldView='spot';
+let goldPremium=0;
+let goldDetailOpen=false;
 const FALLBACK_DATE='2026-10-09';
 const fallback={
   timestamp:'09 Oct 2026 · 15:31 IST',
@@ -424,6 +590,27 @@ function usSessionStatus(){
  if(x.mins>=960&&x.mins<1200)return 'After-Hours';
  return 'Closed';
 }
+
+function sgxSessionStatus(){
+ const {weekday,mins}=partsInZone('Asia/Singapore');
+ if(['Sat','Sun'].includes(weekday))return 'Closed · weekend';
+ if(mins<510)return 'Before pre-open';
+ if(mins<540)return 'Opening routine';
+ if(mins<720)return 'Open · morning';
+ if(mins<780)return 'Lunch break';
+ if(mins<1020)return 'Open · afternoon';
+ if(mins<1036)return 'Close auction';
+ return 'Closed · session';
+}
+function metalSessionLabel(quote){
+ if(!quote?.spotUpdatedAt)return 'No quote';
+ const day=partsInZone('UTC').weekday;
+ if(['Sat','Sun'].includes(day))return 'Weekend · last quote';
+ const age=Math.max(0,Date.now()-new Date(quote.spotUpdatedAt).getTime());
+ if(age>15*60*1000)return 'Quote delayed';
+ return 'Recent spot quote'; // Quote availability is not a formal exchange session.
+}
+
 function giftSessionStatus(){
  const x=partsInZone(IST);
  const d=x.weekday, m=x.mins;
@@ -575,9 +762,9 @@ function explanation(model){
 }
 function render(){
  const m=scoreModel();
- document.getElementById('pulseScore').textContent=(m.score>0?'+':'')+m.score;
- document.getElementById('pulseState').textContent=m.state;
- document.getElementById('confidence').textContent=m.confidence+'%';
+ document.getElementById('pulseScore').textContent=Number.isFinite(marketData.nifty?.pct)?(m.score>0?'+':'')+m.score:'—';
+ document.getElementById('pulseState').textContent=Number.isFinite(marketData.nifty?.pct)?m.state:'DATA UNAVAILABLE';
+ document.getElementById('confidence').textContent=Number.isFinite(marketData.nifty?.pct)?m.confidence+'%':'—';
  document.getElementById('volatility').textContent=m.vol;
  document.getElementById('marketState').textContent=marketStatus()==='Closed'?'Closed · snapshot retained':marketStatus();
  const age=dataAgeMinutes();
@@ -592,6 +779,9 @@ function render(){
  document.getElementById('indiaSession').textContent=marketStatus();
  document.getElementById('giftSession').textContent=giftSessionStatus();
  document.getElementById('usSession').textContent=usSessionStatus();
+ document.getElementById('sgxSession').textContent=sgxSessionStatus();
+ updateMetalsSession();
+ renderSGX();
  document.getElementById('radScore').textContent=(m.score>0?'+':'')+m.score;
  document.getElementById('radLabel').textContent=m.state+' · '+m.confidence+'%';
  const deg=clamp(50+m.score*.5,4,96);
@@ -601,7 +791,7 @@ function render(){
  setValue('sensex',marketData.sensex?.price,marketData.sensex?.pct);
  setValue('vix',marketData.vix?.price,marketData.vix?.pct);
  setValue('gift',marketData.gift?.price,marketData.gift?.pct);
- document.getElementById('marketExplain').textContent=explanation(m);
+ document.getElementById('marketExplain').textContent=Number.isFinite(marketData.nifty?.pct)?explanation(m):'Market explanation becomes available after the first successful index refresh.';
  const es=document.getElementById('explainSource');
  if(es) es.textContent=`Calculated from ${marketData.mode||'available market data'} · ${marketData.timestamp||'timestamp unavailable'}`;
  document.getElementById('dataTime').textContent=(isFinalCloseSnapshot()?'Market close · ':'Data as of · ')+(marketData.timestamp||'timestamp unavailable');
@@ -619,6 +809,17 @@ function render(){
  document.getElementById('advVal').textContent=marketData.breadth?.adv??'--';
  document.getElementById('decVal').textContent=marketData.breadth?.dec??'--';
  document.getElementById('breadthStamp').textContent=marketData.breadth?`Latest available breadth source: ${marketData.breadth.source} · ${marketData.breadth.time}`:'Breadth source unavailable';
+ const note=document.getElementById('marketFeedNotice');
+ if(note){
+   const prices=['nifty','bank','sensex'].filter(k=>Number.isFinite(marketData[k]?.price)).length;
+   const available=(marketData.sectors||[]).filter(x=>x[2]!=null&&Number.isFinite(Number(x[2]))).length;
+   const globals=marketData.global?Object.values(marketData.global).filter(x=>Number.isFinite(x?.price)).length:0;
+   note.textContent=prices||available||globals
+     ? `Data check: ${prices} Indian index quotes, ${available} sector quotes, ${globals} global quotes available. Missing fields mean the upstream source did not provide a verified value.`
+     : 'Live quotes are not connected. Your sector directory and its educational drill-downs remain available. Use the GitHub Pages HTTPS app and check Cloudflare /api/market for quote connectivity.';
+   note.style.display=prices&&available&&globals?'none':'block';
+ }
+
  renderSectors();
  renderTimeline();
  renderInvestorInsights();
@@ -645,13 +846,31 @@ function renderInvestorInsights(){
    ret.textContent='Mixed markets reinforce the importance of cash-flow planning, liquidity and rebalancing instead of short-term index forecasts.';
  }
 }
+const SECTOR_DIRECTORY=['IT','Auto','Pharma','FMCG','Metal','Realty','Energy','PSU Bank','Financial Services','Infrastructure','Media','Banking'];
 function renderSectors(){
  const el=document.getElementById('sectorList');el.innerHTML='';
- (marketData.sectors||[]).forEach(s=>{
-  const row=document.createElement('div');row.className='sector clickable';row.onclick=()=>openDetail('sector',s[0]);
-  row.innerHTML=`<b>${s[0]}</b><span class="${cls(s[2])}">${fmtPct(s[2])}</span><span>${icon(s[2])}</span>`;el.appendChild(row);
+ const records=new Map((marketData.sectors||[]).map(s=>[s[0],s]));
+ const all=[...SECTOR_DIRECTORY,...[...records.keys()].filter(n=>!SECTOR_DIRECTORY.includes(n))];
+ let priced=0;
+ all.forEach(name=>{
+   const sector=records.get(name);
+   const priceChange=sector?sector[2]:null;
+   const available=priceChange!==null&&priceChange!==undefined&&Number.isFinite(Number(priceChange));
+   if(available)priced++;
+   const row=document.createElement('div');
+   row.className='sector clickable';row.setAttribute('role','button');row.setAttribute('tabindex','0');
+   row.setAttribute('aria-label',`Open ${name} sector details`);
+   row.onclick=()=>openSectorDetail(name);
+   row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSectorDetail(name)}};
+   const title=document.createElement('div');
+   const bold=document.createElement('b');bold.textContent=name;title.appendChild(bold);
+   if(!available){const note=document.createElement('div');note.className='sector-quote-note';note.textContent='Tap for sector scope and investor guidance';title.appendChild(note)}
+   const change=document.createElement('span');change.textContent=available?fmtPct(priceChange):'—';change.className=available?cls(Number(priceChange)):'sector-unavailable';
+   const dot=document.createElement('span');dot.textContent=available?icon(Number(priceChange)):'◌';dot.className=available?'':'sector-unavailable';
+   row.append(title,change,dot);el.appendChild(row);
  });
- document.getElementById('sectorStamp').textContent=marketData.timestamp?`Sector source: ${marketData.sectorSource||'latest available snapshot'} · ${marketData.timestamp}`:'Sector timestamp unavailable';
+ const source=priced?`Source: ${marketData.sectorSource||'public market feed'} · ${marketData.timestamp||'timestamp unavailable'}`:'Live sector quotes are unavailable. Every sector remains tappable; prices are not estimated.';
+ document.getElementById('sectorStamp').textContent=`${priced}/${all.length} sector quotes available · ${source}`;
 }
 function timelineSlots(){
  const out=[];let h=9,m=15;
@@ -713,17 +932,18 @@ async function fetchProxyMarket(){
    clearTimeout(timer);
  }
 }
+function nullableQuoteNumber(v){return v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null)}
 function normalizedFromProxy(q){
  if(!q) return null;
  return {
-   price:Number(q.price),
-   pct:Number(q.pct),
+   price:nullableQuoteNumber(q.price),
+   pct:nullableQuoteNumber(q.pct),
    time:q.time||'',
-   prev:Number(q.prev),
-   open:Number(q.open),
-   high:Number(q.high),
-   low:Number(q.low),
-   epoch:Number(q.epoch)||null,
+   prev:nullableQuoteNumber(q.prev),
+   open:nullableQuoteNumber(q.open),
+   high:nullableQuoteNumber(q.high),
+   low:nullableQuoteNumber(q.low),
+   epoch:nullableQuoteNumber(q.epoch),
    timeline:Array.isArray(q.timeline)?q.timeline:[]
  };
 }
@@ -801,11 +1021,11 @@ async function refreshAll(manual=false){
  const btn=document.getElementById('refreshBtn');
  btn.disabled=true;btn.classList.add('loading');
  document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing via Cloudflare Worker':'Refreshing public sources');
- let liveCount=0, routeNames=new Set(), hadAnyError=false;
+ let liveCount=0, routeNames=new Set(), hadAnyError=false, proxyError="";
  try{
    let proxyPack=null;
-   try{ proxyPack=await fetchProxyMarket(); }catch(proxyErr){ proxyPack=null; }
-   const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225'};
+   try{ proxyPack=await fetchProxyMarket(); }catch(proxyErr){ proxyPack=null; proxyError=String(proxyErr?.message||proxyErr); }
+   const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225',sgx:'^STI'};
    let results=[], got={};
    if(proxyPack){
      Object.entries(proxyPack.quotes).forEach(([k,q])=>{
@@ -819,7 +1039,7 @@ async function refreshAll(manual=false){
          .map(s=>[s.name,Number(s.price),Number(s.pct)]);
        marketData.sectorSource='Cloudflare Worker';
      }
-   }else{
+   }else if(!API_BASE){
      results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
    
      results.forEach(x=>{
@@ -870,6 +1090,12 @@ async function refreshAll(manual=false){
      document.getElementById('spMarket').className='sv '+cls(q.pct);
      document.getElementById('spDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
    }
+   if(got.sgx){
+     const q=got.sgx.__proxyNormalized?normalizedFromProxy(got.sgx.__proxyNormalized):quoteFromChart(got.sgx);
+     marketData.global=marketData.global||{};
+     marketData.global.sgx=q;
+     marketData.sgxSource='Cloudflare Worker · Yahoo Finance STI';
+   }
    if(got.nikkei){
      const q=got.nikkei.__proxyNormalized?normalizedFromProxy(got.nikkei.__proxyNormalized):quoteFromChart(got.nikkei); marketData.global=marketData.global||{}; marketData.global.nikkei=q;
      document.getElementById('nikkeiMarket').textContent=fmtPct(q.pct);
@@ -884,37 +1110,33 @@ async function refreshAll(manual=false){
 
    if(liveCount>=3){
       lastSuccessfulMode='live';
-      if(indianSessionAllowsLiveUpdate()){
-        marketData.timestamp='Public web refresh · '+nowIST();
-        marketData.asOfEpoch=Date.now();
-        marketData.mode='Public web refresh';
-      }
+      // Preserve actual exchange quote timestamps; only 'Checked' uses current time.
+      marketData.mode=proxyPack?'Cloudflare Worker market data':'Public web market data';
       const routes=[...routeNames].join(' + ');
       document.getElementById('sourceMode').textContent=proxyPack
         ? `${liveCount} market sources refreshed via Cloudflare Worker`
         : `${liveCount} sources refreshed${routes?' · '+routes:''}`;
    }else if(liveCount>0){
       lastSuccessfulMode='live';
-      if(indianSessionAllowsLiveUpdate()){
-        marketData.timestamp='Partial public web refresh · '+nowIST();
-        marketData.asOfEpoch=Date.now();
-        marketData.mode='Partial public web refresh';
-      }
+      // Keep the actual per-quote observation timestamp rather than the check time.
+      marketData.mode=proxyPack?'Cloudflare Worker (partial)':'Public source (partial)';
       document.getElementById('sourceMode').textContent=proxyPack
         ? `Partial Cloudflare refresh: ${liveCount} source${liveCount===1?'':'s'}`
         : `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`;
    }else{
       lastSuccessfulMode='fallback';
-      document.getElementById('sourceMode').textContent='Live fetch blocked · verified snapshot retained';
+      document.getElementById('sourceMode').textContent=API_BASE?'Cloudflare feed unavailable · '+(proxyError||'no verified response'):'Public source unavailable';
    }
  }catch(e){
    lastSuccessfulMode='fallback';
-   document.getElementById('sourceMode').textContent='Live fetch blocked · verified snapshot retained';
+   document.getElementById('sourceMode').textContent=API_BASE?'Cloudflare feed unavailable · '+(proxyError||'no verified response'):'Public source unavailable';
  }finally{
    saveCurrentPoint();
-   if(liveCount>0) saveIndianSnapshot();
+   if(liveCount>0 && Number.isFinite(marketData.nifty?.pct)) saveIndianSnapshot();
    const completed=new Date();
    lastRefreshCompletedAt=completed.getTime();
+   refreshGold(false);
+   refreshSilver(false);
    document.getElementById('lastUpdate').textContent='Checked '+nowIST();
    const prev=JSON.parse(localStorage.getItem('mm9PulsePrev')||'null');
    render();
@@ -925,6 +1147,7 @@ async function refreshAll(manual=false){
      document.getElementById('changeBox').innerHTML=`<b>Pulse ${d>=0?'strengthened':'weakened'} by ${Math.abs(d)} points</b><br/>Previous saved reading: ${prev.score>0?'+':''}${prev.score}. Current reading: ${cur.score>0?'+':''}${cur.score}.`;
    }
    localStorage.setItem('mm9PulsePrev',JSON.stringify({score:cur.score,time:Date.now()}));
+   if(selectedPulseSymbol!=='^NSEI'||selectedFrame!=='current') maybeRefreshPulse();
    btn.disabled=false;btn.classList.remove('loading');
    refreshInFlight=false;
    scheduleNextRefresh();
@@ -986,13 +1209,13 @@ const SECTOR_META = {
 function sectorFallbackInsight(name, sector){
  const meta=SECTOR_META[name]||{};
  const nifty=marketData.nifty?.pct;
- const pct=Number(sector?.pct);
+ const pct=nullableQuoteNumber(sector?.pct);
  let relative='Relative performance is unavailable.';
- if(Number.isFinite(pct)&&Number.isFinite(nifty)){
+ if(pct!==null&&Number.isFinite(nifty)){
    const gap=pct-Number(nifty);
    relative=`It is ${gap>=0?'outperforming':'underperforming'} Nifty 50 by ${Math.abs(gap).toFixed(2)} percentage points today.`;
  }
- const direction=Number.isFinite(pct)?(pct>0?'positive':pct<0?'negative':'flat'):'mixed';
+ const direction=pct!==null?(pct>0?'positive':pct<0?'negative':'flat'):'mixed';
  return {
    what:meta.scope||`${name} represents an Indian NSE-linked sector index.`,
    why:`The latest price action is ${direction}. ${relative} A specific news catalyst should be verified from current sources before drawing a conclusion.`,
@@ -1051,7 +1274,8 @@ async function openSectorDetail(name){
       <div class="insight-card"><h5>Why</h5><p>${fallback.why}</p></div>
       <div class="insight-card"><h5>How to interpret</h5><p>${fallback.how}</p></div>
       <div class="insight-card"><h5>Next step</h5><p>${fallback.nextStep}</p></div>
-    </div>`);
+    </div>
+    <div class="detailsection"><h4>Index documentation</h4><div class="ss">Sector descriptions are available independently of live quote coverage.</div><div class="sector-source-list"><a class="sector-source-link" href="https://www.niftyindices.com/indices/equity/sectoral-indices" target="_blank" rel="noopener noreferrer">↗ Official NSE sectoral indices</a></div></div>`);
 
  try{
    let payload=null;
@@ -1075,7 +1299,7 @@ async function openSectorDetail(name){
    }catch(_){}
 
    const d=payload.sector||{};
-   const rel=Number.isFinite(Number(d.pct))&&Number.isFinite(Number(marketData.nifty?.pct))
+   const rel=nullableQuoteNumber(d.pct)!==null&&nullableQuoteNumber(marketData.nifty?.pct)!==null
       ? Number(d.pct)-Number(marketData.nifty.pct):null;
    const dayRange=(Number.isFinite(Number(d.high))&&Number.isFinite(Number(d.low)))
       ? `${fmtNum(d.low)} – ${fmtNum(d.high)}`:'--';
@@ -1118,7 +1342,234 @@ async function openSectorDetail(name){
  }
 }
 
+
+
+let silverQuote=null,silverLastCheckedMs=0,silverFetchInFlight=false,silverDetailOpen=false;
+let cityGold=null,selectedGoldCity='Mumbai',cityFetchInFlight=false,cityFetchedAt=0,cityError='';
+const INDIAN_GOLD_CITIES=['Mumbai','Thane','Delhi','Chennai','Bengaluru','Kolkata','Hyderabad','Pune','Ahmedabad','Surat','Jaipur','Lucknow','Kochi','Indore','Nagpur','Vadodara','Chandigarh','Patna'];
+const cityUrl=name=>`https://www.goodreturns.in/gold-rates/${({Bengaluru:'bangalore'}[name]||name.toLowerCase())}.html`;
+function escText(t){return String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function sgxQuote(){return marketData.global?.sgx}
+function renderSGX(){
+ const q=sgxQuote(),p=q?.price,pct=q?.pct;
+ const ov=document.getElementById('ovSGX'),ch=document.getElementById('ovSGXPct');
+ if(ov){ov.textContent=Number.isFinite(p)?fmtNum(p):'—';ov.className='v '+cls(pct)}
+ if(ch)ch.textContent=Number.isFinite(pct)?fmtPct(pct)+' · STI':'Singapore · quote unavailable';
+ const sg=document.getElementById('sgxSession');if(sg)sg.textContent=sgxSessionStatus()+(Number.isFinite(p)?' · STI '+fmtNum(p):'');
+ const e=document.getElementById('sgxMarket'),dot=document.getElementById('sgxDot');
+ if(e){e.textContent=fmtPct(pct);e.className='sv '+cls(pct)}
+ if(dot)dot.className='dot '+(pct>0?'g':pct<0?'r':'a');
+}
+function openSGXDetail(){
+ const q=sgxQuote();
+ const date=q?.epoch?goldDate(q.epoch*1000):'Unavailable';
+ const body=`<div class="detailgrid">
+  ${detailCell('STI index level',q?.price==null?'—':fmtNum(q.price),cls(q?.pct))}
+  ${detailCell('Move',fmtPct(q?.pct),cls(q?.pct))}
+  ${detailCell('Singapore session',sgxSessionStatus())}
+  ${detailCell('Quote as of',date)}
+ </div><div class="detailsection"><h4>SGX market overview</h4>${detailRows({
+   'Previous close':q?.prev==null?null:fmtNum(q.prev),'Open':q?.open==null?null:fmtNum(q.open),
+   'Session high':q?.high==null?null:fmtNum(q.high),'Session low':q?.low==null?null:fmtNum(q.low),
+   'Source':'Yahoo Finance · ^STI (public delayed quote)'
+ })}
+ <div class="ss">Singapore securities normal trading: 09:00–12:00 and 13:00–17:00 SGT, with pre-open and closing routines. Public holidays and exceptional sessions are not automatically verified.</div></div>
+ <div class="detailsection"><h4>SGX vs GIFT Nifty</h4><div class="ss">The STI tracks Singapore equities. The former SGX Nifty contracts moved to the NSE IX GIFT Nifty arrangement in 2023; these must not be confused or treated as the same index.</div><div class="gold-links"><a href="https://www.sgx.com/securities/trading" target="_blank" rel="noopener noreferrer">SGX official trading hours</a><a href="https://sg.finance.yahoo.com/quote/%5ESTI/" target="_blank" rel="noopener noreferrer">STI public quote</a></div></div>`;
+ showSheet('Singapore Market · SGX STI','Singapore equities, separate from GIFT Nifty',body);
+}
+function renderMetalOverviews(){
+ const g=document.getElementById('ovGold'),s=document.getElementById('ovSilver');
+ if(g)g.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+ if(s)s.textContent=goldMoney(silverQuote?.priceInrPerGram,0);
+ const a=document.getElementById('silverPeek'),b=document.getElementById('silverKilo'),st=document.getElementById('silverPeekStatus');
+ if(a)a.textContent=goldMoney(silverQuote?.priceInrPerGram,2);
+ if(b)b.textContent=goldMoney(silverQuote?.priceInrPerKg,0);
+ if(st)st.textContent=silverQuote?`Spot quote ${goldDate(silverQuote.spotUpdatedAt)} · FX ${goldDate(silverQuote.fxUpdatedAt)} · indicative only`:(silverFetchInFlight?'Fetching silver spot…':'Silver rate unavailable');
+ updateMetalsSession();
+}
+function updateMetalsSession(){
+ const g=document.getElementById('goldSession'),s=document.getElementById('silverSession');
+ if(g)g.textContent=(goldQuote?goldMoney(goldRateFor(GOLD_GRADES[4]),0)+'/g · ':'')+metalSessionLabel(goldQuote);
+ if(s)s.textContent=(silverQuote?goldMoney(silverQuote.priceInrPerGram,0)+'/g · ':'')+metalSessionLabel(silverQuote);
+}
+async function refreshSilver(force=false){
+ if(silverFetchInFlight||!API_BASE)return;
+ if(!force&&Date.now()-silverLastCheckedMs<60000)return;
+ silverLastCheckedMs=Date.now();silverFetchInFlight=true;renderMetalOverviews();
+ const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),10000);
+ try{
+  const r=await fetch(`${API_BASE}/api/silver`,{cache:'no-store',signal:ctrl.signal});
+  const j=await r.json();if(!r.ok||!j.ok||!Number.isFinite(Number(j.priceInrPerGram)))throw Error(j.error||'Unavailable');
+  silverQuote=j;
+  try{localStorage.setItem('mm9LastSilverQuote',JSON.stringify({at:Date.now(),data:j}))}catch(_){}
+ }catch(e){
+  if(!silverQuote){try{const x=JSON.parse(localStorage.getItem('mm9LastSilverQuote')||'null');if(x?.data&&Date.now()-x.at<86400000)silverQuote=x.data}catch(_){}}
+  const st=document.getElementById('silverPeekStatus');if(st)st.textContent=silverQuote?'New silver update unavailable · last saved quote':'Silver source unavailable · try again';
+ }finally{clearTimeout(t);silverFetchInFlight=false;renderMetalOverviews();if(silverDetailOpen)renderSilverDetail()}
+}
+function silverDetailBody(){
+ if(!silverQuote)return '<div class="detailsection"><h4>Silver quote unavailable</h4><div class="ss">An international silver quote is required; rates are not estimated without a source.</div><button class="btn primary" onclick="refreshSilver(true)">Try again</button></div>';
+ return `<div class="detailgrid">${detailCell('Silver · 999 / gram',goldMoney(silverQuote.priceInrPerGram))}${detailCell('Silver · 999 / kg',goldMoney(silverQuote.priceInrPerKg,0))}${detailCell('XAG/USD · troy ounce','$'+Number(silverQuote.spotUsdPerOunce).toFixed(2))}${detailCell('USD/INR',Number(silverQuote.usdInr).toFixed(3))}</div>
+ <div class="detailsection"><h4>Source & freshness</h4><div class="ss">Silver spot: ${goldDate(silverQuote.spotUpdatedAt)}<br>FX reference: ${goldDate(silverQuote.fxUpdatedAt)}<br>These are international spot-derived INR values; not an Indian retailer's confirmed silver quote.</div><div class="gold-links"><a href="https://gold-api.com/" target="_blank" rel="noopener noreferrer">Live precious-metal source</a><a href="https://www.goodreturns.in/silver-rates/" target="_blank" rel="noopener noreferrer">India city silver retail rates</a></div></div>`;
+}
+function renderSilverDetail(){if(silverDetailOpen&&document.getElementById('detailSheet').classList.contains('open'))document.getElementById('detailBody').innerHTML=silverDetailBody()}
+function openSilverDetail(){silverDetailOpen=true;showSheet('Silver Rates · 999 fine','Indicative international spot-derived INR values',silverDetailBody());refreshSilver(true)}
+function cityRateRows(){
+ if(!cityGold?.ok){return `<div class="gold-note"><b>Published city rates unavailable</b><br>${escText(cityError||'Select a city to check its published retail benchmark.')}. No fabricated city-specific prices are displayed.</div>`}
+ const found=cityGold.rates||{};
+ const rows=GOLD_GRADES.map(g=>{
+   const v=found[g.label],real=cityGold.publishedKarat?.includes(g.label);
+   return `<tr><td><b>${g.label}</b><br><small>${real?'Published':'Estimated from 24K'}</small></td><td>${goldMoney(v)}</td><td>${goldMoney(v*10,0)}</td></tr>`;
+ }).join('');
+ const dt=cityGold.publishedDate?`Published date: ${escText(cityGold.publishedDate)}`:'Publisher date not verified';
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replace(/(\d{2})\/(\d{2})\/(\d{4})/,'$3-$2-$1');
+ const dated=cityGold.publishedDate&&cityGold.publishedDate!==dateIST();
+ return `<div class="gold-note">${dated?'<b>Older published rate — not live today.</b><br>':''}${dt} · Retrieved ${goldDate(cityGold.checkedAt)}<br>Rates are city-wide indicative benchmarks, not a verified quote from any named jewellery shop.</div><div style="overflow:auto"><table class="city-price-table"><thead><tr><th>Purity</th><th>₹/g</th><th>₹/10g</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function cityRatesPanel(){
+ const options=INDIAN_GOLD_CITIES.map(c=>`<option value="${escText(c)}" ${c===selectedGoldCity?'selected':''}>${escText(c)}</option>`).join('');
+ return `<div class="detailsection"><h4>Indian city jewellery-rate benchmark</h4>
+ <div class="city-controls"><select aria-label="Indian city" id="goldCitySelect" onchange="selectGoldCity(this.value)">${options}</select><button class="btn soft" onclick="refreshCityGold(true)">Check city</button></div>
+ <div id="cityRateData">${cityFetchInFlight?'<div class="loading-line">Checking publisher’s city rates…</div>':cityRateRows()}</div>
+ <div class="city-rate-note"><b>Data distinction:</b> The publisher lists 18K / 22K / 24K city indicative retail prices; 20K and 23K use purity-ratio estimates based on published 24K for the selected city. GST, making charges, hallmarking costs and jeweller margins are separate. Individual shop quotes are not automatically provided.</div>
+ <div class="gold-links"><button class="btn soft" onclick="compareGoldCities()">Compare major cities</button><a id="cityRateSource" href="${cityUrl(selectedGoldCity)}" target="_blank" rel="noopener noreferrer">Verify ${escText(selectedGoldCity)} published rate ↗</a><a href="https://www.ibja.co/" target="_blank" rel="noopener noreferrer">IBJA national benchmark ↗</a></div></div>`;
+}
+function selectGoldCity(value){
+ if(!INDIAN_GOLD_CITIES.includes(value))return;
+ selectedGoldCity=value;cityGold=null;cityError='';
+ const node=document.getElementById('cityRateData');if(node)node.innerHTML=cityRateRows();
+ const a=document.getElementById('cityRateSource');if(a){a.href=cityUrl(value);a.textContent='Verify '+value+' published rate ↗'}
+ refreshCityGold(true);
+}
+async function refreshCityGold(force=false){
+ if(cityFetchInFlight||!API_BASE)return;
+ if(!force&&cityGold?.city===selectedGoldCity&&Date.now()-cityFetchedAt<15*60*1000)return;
+ cityFetchInFlight=true;cityError='';
+ const city=selectedGoldCity;
+ let el=document.getElementById('cityRateData');if(el)el.innerHTML='<div class="loading-line">Checking published '+escText(city)+' retail benchmark…</div>';
+ const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9500);
+ try{
+  const r=await fetch(`${API_BASE}/api/city-gold?city=${encodeURIComponent(city)}`,{cache:'no-store',signal:ctl.signal});
+  const j=await r.json();if(!r.ok||!j.ok)throw Error(j.detail||j.error||'Unavailable');
+  if(selectedGoldCity!==city)return;
+  cityGold=j;cityFetchedAt=Date.now();
+ }catch(e){if(selectedGoldCity===city){cityGold=null;cityError='Publisher feed could not be verified. Open the source page for its latest displayed date.'}}
+ finally{
+  clearTimeout(t);cityFetchInFlight=false;
+  el=document.getElementById('cityRateData');if(el)el.innerHTML=cityRateRows();
+ }
+}
+
+const GOLD_GRADES=[{label:'18K',fineness:750},{label:'20K',fineness:833},{label:'22K',fineness:916},{label:'23K',fineness:958},{label:'24K',fineness:999}];
+function goldMoney(n, decimals=2){return n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n))? '₹'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:decimals,maximumFractionDigits:decimals}):'—'}
+function goldDate(v){if(!v)return 'Not supplied';const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(d)+' IST':'Not supplied'}
+function goldSourceAge(){if(!goldQuote?.spotUpdatedAt)return 'Source time unavailable';const m=Math.max(0,Math.floor((Date.now()-new Date(goldQuote.spotUpdatedAt).getTime())/60000));if(!Number.isFinite(m))return 'Source time unavailable';if(m<2)return 'Recently updated';if(m<60)return `Last quote ${m} min ago`;return `Last quote ${Math.floor(m/60)}h ${m%60}m ago`}
+function goldRateFor(grade, premium=0){
+ const rate=(goldQuote?.spot24kInrPerGram);
+ return Number.isFinite(rate)?rate*(grade.fineness/999)*(1+premium/100):null;
+}
+function renderGoldPeek(){
+ const e22=document.getElementById('gold22Peek'), e24=document.getElementById('gold24Peek'),st=document.getElementById('goldPeekStatus');
+ if(!e22||!e24||!st)return;
+ e22.textContent=goldMoney(goldRateFor(GOLD_GRADES[2]),0);
+   e24.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+  const over=document.getElementById('ovGold');if(over)over.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+ if(goldQuote){st.textContent=`${goldSourceAge()} · USD/INR FX updated ${goldDate(goldQuote.fxUpdatedAt)} · Spot-equivalent only`;}
+ else st.textContent=goldFetchInFlight?'Checking gold-rate sources…':'Gold feed unavailable · Tap for source details';
+}
+async function refreshGold(force=false){
+ if(goldFetchInFlight || !API_BASE)return;
+ if(!force && Date.now()-goldLastCheckedMs<60000)return;
+ goldLastCheckedMs=Date.now();goldFetchInFlight=true;renderGoldPeek();
+ const c=new AbortController();const t=setTimeout(()=>c.abort(),9500);
+ try{
+  const res=await fetch(`${API_BASE}/api/gold`,{cache:'no-store',signal:c.signal});
+  const data=await res.json();
+  if(!res.ok||!data.ok||!Number.isFinite(Number(data.spot24kInrPerGram)))throw Error(data.error||`Gold endpoint HTTP ${res.status}`);
+  goldQuote=data;
+  try{localStorage.setItem('mm9LastGoldQuote',JSON.stringify({savedAt:Date.now(),data}));}catch(_){}
+ }catch(err){
+  if(!goldQuote){try{const saved=JSON.parse(localStorage.getItem('mm9LastGoldQuote')||'null');if(saved?.data&&Date.now()-saved.savedAt<86400000)goldQuote=saved.data;}catch(_){}}
+  const e=document.getElementById('goldPeekStatus');if(e)e.textContent=goldQuote?`Live gold update unavailable · showing last saved quote (${goldSourceAge()})`:`Gold feed unavailable · ${String(err.message||'check Worker')}`;
+ }finally{
+  clearTimeout(t);goldFetchInFlight=false;
+  // Do not overwrite a source error notice with optimistic status if the source failed.
+  if(goldQuote)renderGoldPeek();
+  renderMetalOverviews();
+  if(goldDetailOpen)renderGoldDetail();
+ }
+}
+function selectGoldView(next){goldView=next==='jewellery'?'jewellery':'spot';renderGoldDetail()}
+function setGoldPremium(value){
+ goldPremium=Math.min(25,Math.max(0,Number(value)||0));
+ const label=document.getElementById('goldPremiumText');if(label)label.textContent=goldPremium.toFixed(0)+'%';
+ for(const g of GOLD_GRADES){
+   const row=document.querySelector(`[data-gold-grade="${g.label}"]`);
+   if(!row)continue;
+   const p=goldRateFor(g,goldPremium);
+   const cells=row.querySelectorAll('td');
+   if(cells[1])cells[1].textContent=goldMoney(p);
+   if(cells[2])cells[2].textContent=goldMoney(p*10,0);
+ }
+}
+function goldLiveDetailBody(){
+ if(!goldQuote)return `<div class="detailsection"><h4>Spot feed unavailable</h4><div class="ss">A gold spot quote has not been verified; no price is invented.</div><button class="btn primary" onclick="refreshGold(true)">Retry gold feed</button></div>${cityRatesPanel()}`;
+ const rates=GOLD_GRADES.map(g=>{const p=goldRateFor(g,goldView==='jewellery'?goldPremium:0);return `<tr data-gold-grade="${g.label}"><td><b>${g.label}</b><small>Purity ${g.fineness}/1000</small></td><td><strong>${goldMoney(p)}</strong></td><td>${goldMoney(p*10,0)}</td></tr>`}).join('');
+ return `
+  <div class="detailgrid">
+   ${detailCell('International XAU spot','$'+Number(goldQuote.spotUsdPerOunce).toLocaleString('en-US',{maximumFractionDigits:2})+' / troy oz')}
+   ${detailCell('USD → INR',Number(goldQuote.usdInr).toFixed(3)+' INR')}
+  </div>
+  <div class="gold-timestamps">Gold quote: ${goldDate(goldQuote.spotUpdatedAt)} · ${goldSourceAge()}<br>Currency reference: ${goldDate(goldQuote.fxUpdatedAt)} (free FX feed updates daily)<br>Checked: ${goldDate(goldQuote.checkedAt)}</div>
+  <div class="gold-toggle">
+   <button class="${goldView==='spot'?'active':''}" onclick="selectGoldView('spot')">Spot-equivalent rates</button>
+   <button class="${goldView==='jewellery'?'active':''}" onclick="selectGoldView('jewellery')">Jewellery estimate</button>
+  </div>
+  ${goldView==='jewellery'?`<div class="gold-pick"><label class="gold-control-label" for="goldPremiumRange">Jeweller premium / local price adjustment: <b id="goldPremiumText">${goldPremium.toFixed(0)}%</b></label><input class="gold-premium" id="goldPremiumRange" type="range" min="0" max="25" step="1" value="${goldPremium}" oninput="setGoldPremium(this.value)"/><div class="ss">Adjust the percentage to compare a jeweller’s metal rate. This is a calculation—not a live quote from any named shop. Making charges, GST and stones are not included.</div></div>`:''}
+  <div style="overflow:auto;margin:10px 0;border:1px solid var(--line);border-radius:13px"><table class="gold-rates"><thead><tr><th>Karat</th><th>Per gram</th><th>Per 10 grams</th></tr></thead><tbody>${rates}</tbody></table></div>
+  <div class="gold-note"><b>${goldView==='spot'?'About these indicative prices':'About the jeweller estimate'}</b><br>${goldView==='spot'?'Values are calculated from the international XAU/USD spot quote multiplied by the latest available daily USD/INR rate, divided by 31.1034768 grams per troy ounce, then scaled by gold purity. They are not Indian local bullion rates or final jewellery shop rates.':'The live spot-equivalent purity prices are adjusted only by your chosen premium. A jeweller can quote a different daily base price, taxes, making charges, wastage or stone costs; request an itemised store quotation.'}</div>
+  <div class="detailsection"><h4>Verify published Indian retail rates</h4>
+    <div class="ss">These websites publish their own rate information at their own cadence. The app does not claim to fetch their shop-specific quotes.</div>
+    <div class="gold-links">
+      <a href="https://www.ibja.co/" target="_blank" rel="noopener noreferrer">↗ IBJA India benchmark</a>
+      <a href="https://www.tanishq.co.in/gold-rate.html" target="_blank" rel="noopener noreferrer">↗ Tanishq retail</a>
+      <a href="https://www.miabytanishq.com/en/gold-rate-today" target="_blank" rel="noopener noreferrer">↗ Mia by Tanishq</a>
+      <a href="https://www.bis.gov.in/hallmarking-overview/hallmarking-faqs/hallmarking-faq/?lang=en" target="_blank" rel="noopener noreferrer">↗ BIS hallmarks</a>
+    </div>
+  </div>
+     ${cityRatesPanel()}
+   <div class="detailsection"><h4>Live-data providers</h4><div class="ss">International spot: <a href="https://gold-api.com/" target="_blank" rel="noopener noreferrer">Gold-API</a> · Currency rate: <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>. Spot checked periodically, FX updated daily. Please check quote timestamp before using a rate.</div></div>
+  `;
+}
+function renderGoldDetail(){if(goldDetailOpen&&document.getElementById('detailSheet').classList.contains('open'))document.getElementById('detailBody').innerHTML=goldLiveDetailBody()}
+function openGoldDetail(){goldDetailOpen=true;goldView='spot';showSheet('Gold Rates · 18K–24K','Spot equivalent + published Indian city benchmarks',goldLiveDetailBody());if(!goldQuote||Date.now()-goldLastCheckedMs>45000)refreshGold(true);refreshCityGold(false)}
+
+async function compareGoldCities(){
+ const cities=['Mumbai','Thane','Delhi','Chennai','Bengaluru','Kolkata','Hyderabad','Pune','Ahmedabad','Jaipur','Surat','Lucknow'];
+ goldDetailOpen=false;silverDetailOpen=false;
+ showSheet('Gold · Major Indian Cities','Published daily city benchmarks · source date may vary',
+  '<div class="detailsection"><h4>City comparison</h4><div id="cityCompareResults" class="loading-line">Checking published city rate sources…</div></div><div class="gold-note">The figures below are indicative published retail benchmarks, not individual jeweller quotes or spot-derived estimates. If a publisher is unavailable, the rate remains blank; verify dates before using them.</div>');
+ const results=[];
+ const batches=[];
+ for(let i=0;i<cities.length;i+=4)batches.push(cities.slice(i,i+4));
+ for(const batch of batches){
+  const rr=await Promise.all(batch.map(async city=>{
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),9500);
+   try{
+    const r=await fetch(`${API_BASE}/api/city-gold?city=${encodeURIComponent(city)}`,{cache:'no-store',signal:controller.signal});
+    if(!r.ok)throw Error('unavailable');
+    const j=await r.json();return {city,...j};
+   }catch(_){return {city,ok:false,sourceUrl:cityUrl(city)}}finally{clearTimeout(timer)}
+  }));results.push(...rr);
+  const target=document.getElementById('cityCompareResults');
+  if(!target)return;
+  const rows=results.map(q=>`<tr><td><a href="${cityUrl(q.city)}" target="_blank" rel="noopener noreferrer">${escText(q.city)} ↗</a><br><small>${escText(q.publishedDate||'Date unavailable')}</small></td><td>${goldMoney(q.ok?q.rates?.['22K']:null,0)}</td><td>${goldMoney(q.ok?q.rates?.['24K']:null,0)}</td></tr>`).join('');
+  target.innerHTML=`<div style="overflow:auto"><table class="city-price-table"><thead><tr><th>City (${results.length}/${cities.length})</th><th>22K / g</th><th>24K / g</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ }
+}
+
 function closeDetail(){
+ goldDetailOpen=false;
  document.getElementById('modalBackdrop').classList.remove('open');
  document.getElementById('detailSheet').classList.remove('open');
 }
@@ -1155,6 +1606,7 @@ function indexDetail(name,key,extra=''){
  showSheet(name,`Tap outside or × to close`,body);
 }
 function openDetail(type,arg){
+ if(type==='sgx')return openSGXDetail();
  if(type==='nifty') return indexDetail('Nifty 50','nifty','This is the broad Indian large-cap benchmark. The app uses its direction and intraday trend as the largest component of the Market Pulse.');
  if(type==='bank') return indexDetail('Bank Nifty','bank','Bank Nifty is used as a confirmation signal because financials have a large influence on the Indian market. A Nifty move without banking confirmation receives lower conviction.');
  if(type==='sensex') return indexDetail('BSE Sensex','sensex','Sensex is a 30-stock BSE benchmark. It is used as an independent confirmation of broad large-cap direction.');
@@ -1171,6 +1623,7 @@ function openDetail(type,arg){
     ${detailCell('Nasdaq',g.nasdaq?fmtPct(g.nasdaq.pct):'Source unavailable',g.nasdaq?cls(g.nasdaq.pct):'')}
     ${detailCell('S&P 500',g.sp?fmtPct(g.sp.pct):'Source unavailable',g.sp?cls(g.sp.pct):'')}
     ${detailCell('Nikkei 225',g.nikkei?fmtPct(g.nikkei.pct):'Source unavailable',g.nikkei?cls(g.nikkei.pct):'')}
+    ${detailCell('Singapore STI',g.sgx?fmtPct(g.sgx.pct):'Source unavailable',g.sgx?cls(g.sgx.pct):'')}
     ${detailCell('Refresh cycle','Every 15 sec')}
    </div>
    <div class="detailsection"><h4>How global monitoring works</h4><div style="font-size:10px;line-height:1.6">The global refresh cycle can continue after NSE closes. Indian cash indices keep the last successful snapshot, while GIFT Nifty and accessible US/Asian sources continue to refresh according to their own sessions. If a browser blocks a source, its last known value remains timestamped instead of being presented as current.</div></div>`;
@@ -1342,20 +1795,229 @@ function armNextRefresh(){
    armNextRefresh();
  },REFRESH_MS);
 }
+// === Multi-timeframe and Stock Watch UI ===
+const STOCK_CHOICES = [
+ ['RELIANCE.NS','Reliance Industries'], ['INFY.NS','Infosys'], ['TCS.NS','TCS'],
+ ['HDFCBANK.NS','HDFC Bank'],['ICICIBANK.NS','ICICI Bank'],['SBIN.NS','SBI'],
+ ['BHARTIARTL.NS','Bharti Airtel'],['ITC.NS','ITC'],['WIPRO.NS','Wipro'],
+ ['HINDUNILVR.NS','Hindustan Unilever'],['LT.NS','Larsen & Toubro'],['AXISBANK.NS','Axis Bank'],
+ ['KOTAKBANK.NS','Kotak Mahindra Bank'],['BAJFINANCE.NS','Bajaj Finance'],
+ ['MARUTI.NS','Maruti Suzuki'],['TATAMOTORS.NS','Tata Motors'],['SUNPHARMA.NS','Sun Pharma'],
+ ['NTPC.NS','NTPC'],['TATASTEEL.NS','Tata Steel'],['ONGC.NS','ONGC']
+];
+let selectedPulseSymbol='^NSEI';
+let selectedFrame='current';
+let latestPulsePack=null;
+let pulseFetchedAt=0;
+let pulseFetchActive=false;
+let lastPulseRefreshKey='';
+let lastPulseAttemptMs=0;
+let pulseDataBySymbol={};
+function formatPulseAsOf(s){return s||'Waiting for a completed interval'}
+function activeSymbolName(){return selectedPulseSymbol==='^NSEI'?'Indian Market':(STOCK_CHOICES.find(a=>a[0]===selectedPulseSymbol)?.[1]||selectedPulseSymbol)}
+function pulseStatusText(){
+ const times={current:'15-second check',m15:'15-minute completed candle',m30:'30-minute completed candle',h1:'60-minute completed candle',d1:'Completed daily close'};
+ return times[selectedFrame];
+}
+function setWatchSymbol(s){
+ const symbol=String(s||'').toUpperCase().trim();
+ if(symbol!=='^NSEI'&&!/^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(symbol)){
+  document.getElementById('watchStatus').textContent='Enter an NSE ticker such as RELIANCE.NS or INFY.NS, or a BSE ticker ending .BO.';
+  return;
+ }
+ selectedPulseSymbol=symbol;
+ document.getElementById('watchSearch').value=symbol==='^NSEI'?'':symbol;
+ document.getElementById('watchStatus').textContent=`Watching ${activeSymbolName()} · ${symbol==='^NSEI'?'broad market':'individual stock'}`;
+ latestPulsePack=pulseDataBySymbol[symbol]||null;
+ lastPulseRefreshKey='';
+ renderWatchPulse();
+ loadWatchPulse(true);
+}
+function setMarketWatch(){setWatchSymbol('^NSEI')}
+function selectQuickStock(sym){setWatchSymbol(sym)}
+function submitStockSearch(){
+ const raw=document.getElementById('watchSearch').value.trim();
+ if(!raw){setMarketWatch();return}
+ const normalized=raw.toUpperCase().replace(/\s+/g,'');
+ const found=STOCK_CHOICES.find(a=>a[0]===normalized||a[1].toUpperCase()===raw.toUpperCase()||a[0].split('.')[0]===normalized);
+ if(found){setWatchSymbol(found[0]);return}
+ // Actual exchange code only; never guess a legal company name.
+ if(/^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(normalized)){setWatchSymbol(normalized);return}
+ document.getElementById('watchStatus').textContent='Please enter a valid exchange symbol such as RELIANCE.NS or INFY.NS; company-name lookup is limited to the suggested stocks.';
+}
+function switchPulseFrame(frame){
+ if(!['current','m15','m30','h1','d1'].includes(frame))return;
+ selectedFrame=frame;
+ document.querySelectorAll('[data-pulse-frame]').forEach(b=>{
+  const on=b.dataset.pulseFrame===frame;
+  b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');
+ });
+ renderWatchPulse();
+ if(frame!=='current'||selectedPulseSymbol!=='^NSEI')loadWatchPulse(false);
+}
+function calendarIST(){
+ const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+ const o=Object.fromEntries(p.map(x=>[x.type,x.value]));
+ return {date:`${o.year}-${o.month}-${o.day}`,min:+o.hour*60+(+o.minute)};
+}
+function intervalRefreshKey(){
+ const t=calendarIST();
+ // Current quotes are covered by the existing 15-second refresh clock.
+ if(selectedFrame==='current')return `${t.date}/current/${Math.floor(Date.now()/15000)}`;
+ if(selectedFrame==='d1')return `${t.date}/daily/${t.min>=930?'close':'before-close'}`;
+ const period={m15:15,m30:30,h1:60}[selectedFrame];
+ // Use market-open 09:15 anchored windows; hourly ends 10:15,11:15 etc.
+ const bucket=Math.floor(Math.max(0,Math.min(t.min,930)-555)/period);
+ return `${t.date}/${selectedFrame}/${bucket}`;
+}
+async function loadWatchPulse(force=false){
+ if(pulseFetchActive||!API_BASE)return;
+ const key=intervalRefreshKey();
+ const symbol=selectedPulseSymbol;
+ if(!force&&latestPulsePack&&lastPulseRefreshKey===key)return;
+ pulseFetchActive=true;lastPulseAttemptMs=Date.now();
+ const status=document.getElementById('frameFetchStatus');
+ if(status) status.textContent='Checking completed candles through Cloudflare…';
+ try{
+  const c=new AbortController();const timer=setTimeout(()=>c.abort(),14000);
+  let response;
+  try{response=await fetch(`${API_BASE}/api/pulse?symbol=${encodeURIComponent(symbol)}`,{cache:'no-store',signal:c.signal});}
+  finally{clearTimeout(timer)}
+  const pack=await response.json();
+  if(!response.ok||!pack.ok)throw new Error(pack.error||'Pulse data temporarily unavailable');
+  if(symbol!==selectedPulseSymbol)return;
+  latestPulsePack=pack;
+  pulseDataBySymbol[symbol]=pack;
+  pulseFetchedAt=Date.now();lastPulseRefreshKey=key;
+  saveObservation(pack);
+  renderWatchPulse();
+ }catch(e){
+  if(status)status.textContent=`Period data unavailable: ${e?.message||'Please retry.'}. Previous verified period retained if available.`;
+ }finally{pulseFetchActive=false}
+}
+function frameSignalForCurrent(pack){
+ const price=pack?.quote?.price, pct=pack?.quote?.pct;
+ if(!Number.isFinite(price)||!Number.isFinite(pct))return null;
+ const benchmark=marketData.nifty?.pct;
+ const score=Math.round(Math.max(-100,Math.min(100,pct/3.5*75)));
+ const signal=score>=65?'STRONG BULLISH':score>=35?'BULLISH':score>=15?'MILD BULLISH':score<=-65?'STRONG BEARISH':score<=-35?'BEARISH':score<=-15?'MILD BEARISH':'NEUTRAL';
+ return {score,signal,pct,close:price,confidence:50,coverage:'One stock · latest available price change',asOf:`${pack.quoteDate||'—'} ${pack.quoteTime||'—'} IST`,relative:Number.isFinite(benchmark)?pct-benchmark:null,method:'Price change since the previous trading close; not a 15-second return.',complete:false};
+}
+function renderWatchPulse(){
+ const stock=selectedPulseSymbol!=='^NSEI';
+ const showFrame=stock||selectedFrame!=='current';
+ const hero=document.getElementById('currentPulseSection');
+ const period=document.getElementById('framePulseSection');
+ hero.style.display=showFrame?'none':'';
+ period.style.display=showFrame?'':'none';
+ document.getElementById('stockSnapshot').style.display=stock?'':'none';
+ document.getElementById('stockLabel').textContent=activeSymbolName();
+ document.getElementById('stockTicker').textContent=selectedPulseSymbol;
+ document.getElementById('periodHelp').textContent=stock?
+  'Stock Pulse tracks one share, not the whole market. Intraday periods use completed price candles; daily uses the final daily close.':
+  'Intraday Pulse is based on completed Nifty candles with Bank Nifty/Sensex confirmation when available. The daily signal uses completed closes.';
+ const name=activeSymbolName();
+ const titles={current:'Current Stock Pulse',m15:'15 Minute Pulse',m30:'30 Minute Pulse',h1:'1 Hour Pulse',d1:'Daily Pulse'};
+ document.getElementById('frameTitle').textContent=`${titles[selectedFrame]} · ${name}`;
+ document.getElementById('frameCadence').textContent=pulseStatusText();
+ document.getElementById('frameNext').textContent=selectedFrame==='d1'?'Refresh at/after 15:30 IST':selectedFrame==='current'?'Check every 15 seconds':selectedFrame==='h1'?'Recalculate at each completed hour from 09:15':'Recalculate after each completed candle';
+ const pack=latestPulsePack;
+ const pulse=stock&&selectedFrame==='current'?frameSignalForCurrent(pack):pack?.periods?.[selectedFrame];
+ const hasPulse=pulse&&Number.isFinite(pulse.score);
+ document.getElementById('frameScore').textContent=hasPulse?(pulse.score>0?'+':'')+pulse.score:'—';
+ document.getElementById('frameSignal').textContent=hasPulse?pulse.signal:'AWAITING DATA';
+ document.getElementById('frameChange').textContent=hasPulse?fmtPct(pulse.pct):'—';
+ document.getElementById('frameLevel').textContent=hasPulse?fmtNum(pulse.close):'—';
+ document.getElementById('frameAgreement').textContent=hasPulse?pulse.coverage:'Not enough completed market data';
+ document.getElementById('frameConfidence').textContent=hasPulse?`${pulse.confidence}%`:'—';
+ document.getElementById('frameTime').textContent=hasPulse?formatPulseAsOf(pulse.asOf):'No completed period currently available';
+ document.getElementById('frameCaution').textContent=stock?'Stock strength describes observed movement, not an entry/exit recommendation.':'Pulse score describes observed momentum and agreement, not a probability of price direction.';
+ if(pack){
+  document.getElementById('frameFetchStatus').textContent=`Source: ${pack.source} · ${pack.generatedAt?new Date(pack.generatedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'}):'—'} IST check`;
+  document.getElementById('stockPrice').textContent=fmtNum(pack.quote?.price);
+  document.getElementById('stockMove').textContent=fmtPct(pack.quote?.pct);
+  document.getElementById('stockSource').textContent=`Quote date/time: ${pack.quoteDate||'—'} ${pack.quoteTime||'—'} IST · prices may be delayed`;
+ }else{
+  document.getElementById('frameFetchStatus').textContent='Connecting to the chart source…';
+ }
+ renderPulseJournal();
+}
+const OBSERVATION_KEY='mm9_pulse_observations_v1';
+function storedObservations(){try{return JSON.parse(localStorage.getItem(OBSERVATION_KEY)||'[]')}catch(_){return []}}
+function saveObservation(pack){
+ const p=pack?.periods?.d1;
+ if(!p?.complete||!p.sessionDate||!Number.isFinite(p.close))return;
+ const rows=storedObservations().filter(r=>!(r.symbol===pack.symbol&&r.date===p.sessionDate));
+ rows.push({symbol:pack.symbol,date:p.sessionDate,close:p.close,changePct:p.pct,score:p.score,signal:p.signal,recordedAt:new Date().toISOString()});
+ rows.sort((a,b)=>a.date.localeCompare(b.date));
+ try{localStorage.setItem(OBSERVATION_KEY,JSON.stringify(rows.slice(-350)))}catch(_){}
+}
+function renderPulseJournal(){
+ const rows=storedObservations().filter(r=>r.symbol===selectedPulseSymbol).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
+ const ct=rows.length;
+ document.getElementById('trialProgress').textContent=`${ct} / 20 distinct trading sessions recorded on this browser`;
+ document.getElementById('trialBar').style.width=`${Math.min(100,ct*5)}%`;
+ const body=document.getElementById('trialRows');body.innerHTML='';
+ if(!rows.length){
+  const tr=document.createElement('tr');tr.innerHTML='<td colspan="4" style="padding:9px;color:#6E7A84">No sessions recorded yet. Open the app after a trading close to begin.</td>';body.appendChild(tr);
+ }else for(const r of rows.slice(0,8)){
+  const tr=document.createElement('tr');for(const val of [r.date,fmtNum(r.close),fmtPct(r.changePct),r.signal]){const td=document.createElement('td');td.textContent=val;tr.appendChild(td)}body.appendChild(tr);
+ }
+}
+function exportPulseJournal(){
+ const rows=storedObservations().filter(r=>r.symbol===selectedPulseSymbol).sort((a,b)=>a.date.localeCompare(b.date));
+ if(!rows.length){document.getElementById('trialProgress').textContent='No sessions to export yet';return}
+ const cells=[['Symbol','Date','Close','Daily change %','Pulse score','Pulse label','Recorded at'],...rows.map(r=>[r.symbol,r.date,r.close,r.changePct,r.score,r.signal,r.recordedAt])];
+ const csv=cells.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_observations.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function maybeRefreshPulse(){
+ const key=intervalRefreshKey();
+ if(selectedFrame==='current'&&selectedPulseSymbol==='^NSEI')return;
+ const now=calendarIST();
+ const todayStillClosing=selectedFrame==='d1'&&now.min>=930&&now.min<=970&&latestPulsePack?.periods?.d1?.sessionDate!==now.date;
+ const delayedCandle=selectedFrame!=='d1'&&selectedFrame!=='current'&&(!latestPulsePack?.periods?.[selectedFrame]);
+ const retry=(todayStillClosing||delayedCandle)&&Date.now()-lastPulseAttemptMs>60000;
+ if(!pulseFetchActive&&(!latestPulsePack||lastPulseRefreshKey!==key||retry))loadWatchPulse(retry);
+}
+
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
- document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');window.scrollTo({top:0,behavior:'smooth'});
+ document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false)}window.scrollTo({top:0,behavior:'smooth'});
 }));
 window.addEventListener('load',()=>{
+ try{const saved=JSON.parse(localStorage.getItem('mm9LastGoldQuote')||'null');if(saved?.data&&Date.now()-saved.savedAt<86400000)goldQuote=saved.data;}catch(_){}
+ renderGoldPeek();
+ renderMetalOverviews();
+ try{const ss=JSON.parse(localStorage.getItem('mm9LastSilverQuote')||'null');if(ss?.data&&Date.now()-ss.at<86400000)silverQuote=ss.data;}catch(_){}
+ renderMetalOverviews();
+ refreshGold(true);
+ refreshSilver(true);
  seedFallbackTimeline();
  marketData=JSON.parse(JSON.stringify(fallback));
  const restored=marketStatus()==='Closed' ? restoreIndianSnapshot() : false;
+ if(!restored){
+   ['nifty','bank','sensex','vix','gift'].forEach(k=>marketData[k]={price:null,pct:null,source:'Not yet refreshed'});
+   marketData.sectors=[];
+   marketData.breadth=null;
+   marketData.timestamp='Awaiting live source data';
+   marketData.asOfEpoch=undefined;
+   marketData.mode='No verified quote yet';
+   timelinePoints=[];
+ }
  render();
+ if(!restored){
+   document.getElementById('pulseScore').textContent='—';document.getElementById('pulseState').textContent='CONNECTING';
+   document.getElementById('confidence').textContent='—';
+ }
  document.getElementById('lastUpdate').textContent=restored?'Last market snapshot restored':'Source snapshot loaded';
  document.getElementById('sourceMode').textContent=marketStatus()==='Closed'
    ? 'Indian market closed · final close retained'
    : 'Starting live refresh';
  setupAuto();
+ renderWatchPulse();
+ setTimeout(()=>loadWatchPulse(true),1100);
  const ps=document.getElementById('proxyStatus');
  if(ps) ps.textContent=API_BASE?`Connected: ${API_BASE}`:'Not configured yet';
  setTimeout(()=>refreshAll(false),250);
