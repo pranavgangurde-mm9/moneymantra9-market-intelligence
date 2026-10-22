@@ -8,5 +8,10 @@
   },
   "ai": {
     "binding": "AI"
+  },
+  "triggers": {
+    "crons": [
+      "45 1 * * mon-fri"
+    ]
   }
 }

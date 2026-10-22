@@ -613,7 +613,29 @@ async function runFinanceModel(env, model, messages, useWeb) {
   return env.AI.run(model, params);
 }
 
-async function answerFinanceQuestion(question, env) {
+async function answerFinanceQuestion(question, env, history=[],appContext={}) {
+  const query=String(question||'').trim();
+  const context=appContext&&typeof appContext==='object'?appContext:{};
+  const asksGold=/\b(gold|22\s*k|24\s*k|18\s*k|sone|sona)\b/i.test(query);
+  const asksSilver=/\b(silver|chandi)\b/i.test(query);
+  const followupMetal=Array.isArray(history)&&history.slice(-4).some(x=>x?.role==='user'&&/\b(gold|silver|22\s*k|24\s*k|sone|sona|chandi)\b/i.test(String(x.content||'')));
+  const asksPrice=/\b(price|rate|today|current|latest|value|kitna|kitne|how much)\b/i.test(query)||((asksGold||asksSilver)&&followupMetal);
+  // The authoritative branch never asks an LLM to invent a commodity price.
+  if((asksGold||asksSilver)&&asksPrice){
+    const p=await fetchIndiaBenchmark().catch(()=>null);
+    if(!p||!p.ok){return {ok:true,answer:`I could not verify a current Indian ${asksGold?'gold':'silver'} benchmark. Please use Markets → ${asksGold?'Gold':'Silver'} Watch and check the publisher date before using a price.`,model:'India benchmark availability check',dataDate:null,sources:[]}}
+    const isGold=asksGold&&!asksSilver;
+    const rate=isGold?Number(p.gold24kPer10g)/10:Number(p.silver999PerKg)/1000;
+    if(!Number.isFinite(rate)||rate<=0)return {ok:true,answer:'The Indian benchmark publisher did not provide a verified rate for this metal; no value is displayed.',model:'India rate validator',sources:[]};
+    const grade=(query.match(/(18|20|22|23|24)\s*k/i)||[])[1]||'24';
+    const fineness={'18':750,'20':833,'22':916,'23':958,'24':999}[grade];
+    const weightMatch=query.match(/(\d+(?:\.\d+)?)\s*(?:grams?|gm|g)\b/i);
+    const grams=weightMatch?Number(weightMatch[1]):1;
+    const unit=Number.isFinite(grams)&&grams>0&&grams<=100000?grams:1;
+    const estimate=rate*(fineness/999)*unit;
+    const text=isGold?`India ${grade}K gold benchmark equivalent: ₹${(rate*fineness/999).toLocaleString('en-IN',{maximumFractionDigits:2})}/g, dated ${p.publishedDate}. ${unit!==1?`${unit} g metal-value estimate: ₹${estimate.toLocaleString('en-IN',{maximumFractionDigits:2})}. `:''}This is a published India reference; GST and jeweller making charges can change the final price.`:`India 999 silver benchmark: ₹${rate.toLocaleString('en-IN',{maximumFractionDigits:2})}/g, dated ${p.publishedDate}. ${unit!==1?`${unit} g metal-value estimate: ₹${(rate*unit).toLocaleString('en-IN',{maximumFractionDigits:2})}. `:''}This is not a live MCX quote or jeweller selling price.`;
+    return {ok:true,answer:text,model:'India bullion benchmark',dataDate:p.publishedDate,sources:[{title:'India bullion benchmark',url:'https://allindiabullion.com/benchmark'}]};
+  }
   if (!env.AI) {
     return {
       ok: false,
@@ -652,11 +674,19 @@ Rules:
 9. Do not repeat the question and do not add unrelated background information.
 10. Sources are shown separately by the app, so do not append a bibliography or URLs unless the user explicitly asks for them.`;
 
+  const safeHistory=Array.isArray(history)?history.slice(-8).filter(x=>['user','assistant'].includes(x?.role)).map(x=>({role:x.role,content:String(x.content||'').slice(0,700)})):[];
+  const clientAppContext={selectedSymbol:context.selectedSymbol,selectedName:context.selectedName,timeframe:context.timeframe,quote:context.quote,recentCloses:context.recentCloses,marketSession:context.marketSession,gold:context.gold,silver:context.silver};
   const user = `QUESTION:
 ${question}
 
-MARKET CONTEXT:
-${JSON.stringify(marketContext)}`;
+LIVE/RECENT MARKET DATA WITH SOURCE TIMESTAMPS:
+${JSON.stringify(marketContext)}
+
+APP SCREEN CONTEXT (MAY BE CACHED; CHECK DATES):
+${JSON.stringify(clientAppContext)}
+
+PRIOR CONVERSATION TURNS (USE TO RESOLVE FOLLOW-UP QUESTIONS):
+${JSON.stringify(safeHistory)}`;
 
   const messages = [
     { role: "system", content: system },
@@ -743,6 +773,40 @@ async function marketResponse(request, ctx) {
 }
 
 // === Multi-timeframe Pulse Engine (Indian cash market, timezone IST) ===
+
+const NSE_DIRECTORY_URL='https://archives.nseindia.com/content/equities/EQUITY_L.csv';
+function readCsvLine(line){
+ const vals=[];let value='',quoted=false;
+ for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(quoted&&line[i+1]==='"'){value+='"';i++}else quoted=!quoted}else if(ch===','&&!quoted){vals.push(value.trim());value=''}else value+=ch}
+ vals.push(value.trim());return vals;
+}
+async function symbolsEndpoint(request,ctx,env={},force=false){
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ let stored=null;
+ if(env.SYMBOLS_KV){try{stored=await env.SYMBOLS_KV.get('nse-mainboard-equity-list','json')}catch(e){console.log('KV read unavailable',String(e))}}
+ if(!force&&stored?.ok&&stored?.items?.length>1000&&stored.cachedDate===today)return json({...stored,fromCache:true},200,{'cache-control':'public, max-age=1800'});
+ const origin=new URL(request.url).origin,cache=caches.default,key=new Request(origin+'/api/symbols?v=20261022-2');
+ const cached=!force?await cache.match(key):null;if(cached)return cached;
+ const urls=[NSE_DIRECTORY_URL,'https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv'];
+ let last='NSE directory not reachable';
+ for(const url of urls){try{
+    const r=await fetch(url,{headers:{'user-agent':'Mozilla/5.0','accept':'text/csv,text/plain,*/*','referer':'https://www.nseindia.com/'},cf:{cacheEverything:true,cacheTtl:86400}});
+    if(!r.ok){last=`NSE CSV HTTP ${r.status}`;continue}
+    const txt=await r.text();if(!/^SYMBOL\s*,/im.test(txt.slice(0,500))){last='Unexpected NSE format';continue}
+    const lines=txt.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean),head=readCsvLine(lines.shift()).map(x=>x.toUpperCase());
+    const id=head.indexOf('SYMBOL'),nm=head.indexOf('NAME OF COMPANY'),series=head.indexOf('SERIES');if(id<0||nm<0)throw Error('NSE columns unavailable');
+    const seen=new Set(),items=[];
+    for(const line of lines){const parts=readCsvLine(line);const sym=parts[id]?.toUpperCase(),name=parts[nm];if(series>=0&&parts[series]?.toUpperCase()!=='EQ')continue;
+      if(!sym||!name||!/^[A-Z0-9&-]{1,20}$/.test(sym)||seen.has(sym))continue;seen.add(sym);items.push([sym+'.NS',name]);}
+    if(items.length<1000)throw Error('NSE directory incomplete');
+    const data={ok:true,items,count:items.length,asOf:new Date().toISOString(),cachedDate:today,source:'NSE securities available for equity trading',sourceUrl:url,refresh:env.SYMBOLS_KV?'Scheduled daily when Cron/KV configured':'daily on first request'};
+    if(env.SYMBOLS_KV)ctx.waitUntil(env.SYMBOLS_KV.put('nse-mainboard-equity-list',JSON.stringify(data)));
+    const response=json(data,200,{'cache-control':'public, max-age=3600, s-maxage=86400'});ctx.waitUntil(cache.put(key,response.clone()));return response;
+ }catch(e){last=e.message}}
+ if(stored?.ok&&stored?.items?.length>1000)return json({...stored,fromCache:true,note:'NSE refresh failed; last saved directory used',error:null},200,{'cache-control':'public, max-age=600'});
+ return json({ok:false,error:'NSE equity directory temporarily unavailable: '+last,sourceUrl:NSE_DIRECTORY_URL},503,{'cache-control':'no-store'});
+}
+
 const PULSE_FRAMES = Object.freeze({m15:15, m30:30, h1:60});
 const PULSE_SYMBOLS = {
   'RELIANCE.NS':'Reliance Industries', 'INFY.NS':'Infosys',
@@ -816,7 +880,7 @@ function dailyObservations(r,asOfMs=Date.now()){
   const p=pulseParts(epoch);
   const currentDay=p.date===now.date;
   // Current day counts ONLY after cash close and source's latest update is after close.
-  if(p.date>now.date || (currentDay && (now.mins<930||pulseParts(metaEpoch).date!==p.date||pulseParts(metaEpoch).mins<930)))continue;
+  if(p.date>now.date || (currentDay && (now.mins<945||pulseParts(metaEpoch).date!==p.date||pulseParts(metaEpoch).mins<925)))continue;
   map.set(p.date,{date:p.date,close});
  }
  const days=[...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
@@ -1066,6 +1130,12 @@ async function cityGoldEndpoint(request,env,ctx){
 }
 
 export default {
+  // Optional daily Cron at 07:15 IST; requires SYMBOLS_KV binding for durable cross-client storage.
+  async scheduled(controller,env,ctx){
+    try{const r=await symbolsEndpoint(new Request('https://mm9-market-proxy.pranav-gangurde1.workers.dev/api/symbols'),ctx,env,true);
+      if(!r.ok)console.log('Scheduled NSE refresh unavailable',r.status);
+    }catch(e){console.log('Scheduled NSE refresh failed',String(e))}
+  },
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
@@ -1098,6 +1168,8 @@ export default {
     if (url.pathname === "/api/market" && request.method === "GET") {
       return marketResponse(request, ctx);
     }
+
+    if (url.pathname === "/api/symbols" && request.method === "GET") return symbolsEndpoint(request,ctx,env);
 
     if (url.pathname === "/api/pulse" && request.method === "GET") {
       const symbol = validPulseSymbol(url.searchParams.get("symbol") || "^NSEI");
@@ -1144,7 +1216,7 @@ export default {
         if (!question) return json({ ok: false, error: "Question is required." }, 400, { "cache-control": "no-store" });
         if (question.length > 2000) return json({ ok: false, error: "Question is too long." }, 400, { "cache-control": "no-store" });
 
-        const answer = await answerFinanceQuestion(question, env);
+        const answer = await answerFinanceQuestion(question, env, body?.history, body?.appContext);
         return json(answer, answer.ok ? 200 : (answer.status || 500), { "cache-control": "no-store" });
       } catch (error) {
         return json({

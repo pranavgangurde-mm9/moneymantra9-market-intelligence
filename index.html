@@ -188,7 +188,15 @@ main{padding:12px}
 .journal-status{font-size:10px;color:var(--muted);line-height:1.5}
 @media(max-width:340px){.pulse-tab{padding:7px}.watch-search-row button{padding:9px 7px}}
 
+.chart-readout{margin-top:7px;padding:8px 10px;border:1px solid #DCE9E8;background:#F3F8F7;border-radius:10px;font-size:11px;color:#10344B;min-height:33px}
+.chart-point{cursor:crosshair;outline:none}.chart-point:focus{stroke:#10344B;stroke-width:3}.chart-hotspot{cursor:crosshair}
+.share-overlay{position:fixed;inset:0;background:#10233088;z-index:350;display:grid;place-items:center;padding:16px}
+.share-modal{width:min(430px,100%);background:#fff;border-radius:20px;padding:20px;box-shadow:0 18px 50px #0003}
+.share-modal h3{font-size:18px;margin:0 0 5px}.share-modal input{width:100%;padding:13px;border-radius:12px;border:1px solid #CBD8D7;font-size:15px}
+#historySvg{width:100%;height:auto;touch-action:pan-y}.chartbox svg{touch-action:pan-y}
+@media(min-width:650px){.share-modal{max-width:450px}}
 </style>
+<meta name="mm9-build" content="2026.10.22-R2"/>
 </head>
 <body>
 <div class="app">
@@ -227,6 +235,7 @@ main{padding:12px}
    </datalist>
    <button class="btn primary" onclick="submitStockSearch()">Watch</button>
   </div>
+  <div class="ss" id="tickerCatalogStatus" style="margin:7px 0">Loading the NSE equity directory through Cloudflare…</div>
   <div class="quick-stocks">
    <button onclick="setMarketWatch()">Market (Nifty)</button>
    <button onclick="selectQuickStock('RELIANCE.NS')">Reliance</button>
@@ -310,7 +319,7 @@ main{padding:12px}
  <div class="card">
   <h3>Nifty 50 Trend Timeline · 09:15 to 15:30 IST</h3>
   <div class="timeline-wrap">
-   <div class="chartbox"><svg id="trendSvg" viewBox="0 0 440 170" preserveAspectRatio="none"></svg></div>
+   <div class="chartbox"><svg id="trendSvg" viewBox="0 0 440 170" preserveAspectRatio="none"></svg></div><div id="trendReadout" class="chart-readout">Hover or tap to inspect a Nifty intraday point.</div>
    <div id="slotRow" class="slotrow"></div>
   </div>
   <div class="ss" style="margin-top:7px">The timeline fills through the session. After market close, the full day remains available in the chart.</div>
@@ -318,12 +327,14 @@ main{padding:12px}
 
  <div class="card">
    <h3>20-Trading-Day Observation Log</h3>
-   <div id="trialProgress" class="journal-status">0 / 20 sessions recorded on this browser</div>
+   <div id="trialProgress" class="journal-status">0 / 20 completed historical sessions</div>
    <div class="journal-bar"><span id="trialBar"></span></div>
-   <div class="journal-status">A separate daily observation is saved when this browser retrieves a completed trading-day pulse. This helps clients compare values with official data over time; it is not a verified performance/forecast-accuracy test.</div>
+   <div class="journal-status" id="historySourceStatus">Loading the last 20 completed sessions from the historical price source. Each symbol has its own dated series.</div>
+   <div class="chartbox" style="margin-top:12px"><svg id="historySvg" viewBox="0 0 440 180" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Twenty trading-session closing price chart"></svg></div>
+   <div id="historyTooltip" class="chart-readout">Touch or hover over the line to inspect a close.</div>
    <div style="overflow:auto;margin:9px 0"><table class="journal-table"><thead><tr><th>Session</th><th>Close</th><th>Move</th><th>Label</th></tr></thead><tbody id="trialRows"></tbody></table></div>
-   <button class="btn soft" onclick="exportPulseJournal()">Export observations (CSV)</button>
-   <div class="ss" style="margin-top:8px">Saved on this device/browser only; clearing site data removes the log. A background server scheduler would be required for unattended multi-user monitoring.</div>
+   <button class="btn soft" onclick="exportPulseJournal()">Export 20-day history (CSV)</button>
+   <div class="ss" style="margin-top:8px">History is fetched on demand for the selected symbol; a cache may be used if the source is temporarily unavailable. This is historical price analysis, not evidence that an earlier Pulse predicted the market.</div>
  </div>
 
  <div class="disclaimer">Market data shown by this build comes from public web-source adapters when accessible, with a dated fallback source snapshot if direct refresh is unavailable. Data may be delayed. This dashboard is for market education and analytics, not personalized investment advice or a trading recommendation.</div>
@@ -381,7 +392,7 @@ main{padding:12px}
   <div id="goldPeekStatus" class="gold-status">Connecting to the gold-rate feed…</div>
  </div>
 
-  <div class="card clickable" role="button" tabindex="0" onclick="openSilverDetail()"><div class="gold-peek"><div class="gold-symbol" aria-hidden="true" style="background:#E9EEF1;color:#657A8A">◈</div><div style="flex:1;min-width:0"><div class="gold-title">Silver Watch <span class="badge">INDIA REFERENCE</span></div><div class="gold-subtitle">All India Bullion · 999 silver · India daily reference</div></div><div class="gold-arrow">Details ›</div></div><div class="gold-peek-metrics"><div class="gold-peek-kpi"><span>999 Silver / gram</span><b id="silverPeek">—</b></div><div class="gold-peek-kpi"><span>Per kilogram</span><b id="silverKilo">—</b></div></div><div id="silverPeekStatus" class="gold-status">Waiting for live source…</div></div>
+  <div class="card clickable" role="button" tabindex="0" onclick="openSilverDetail()"><div class="gold-peek"><div class="gold-symbol" aria-hidden="true" style="background:#E9EEF1;color:#657A8A">◈</div><div style="flex:1;min-width:0"><div class="gold-title">Silver Watch <span class="badge">INDIA REFERENCE</span></div><div class="gold-subtitle">All India Bullion · 999 silver · India daily reference</div></div><div class="gold-arrow">Details ›</div></div><div class="gold-peek-metrics"><div class="gold-peek-kpi"><span>999 Silver / gram</span><b id="silverPeek">—</b></div><div class="gold-peek-kpi"><span>Per kilogram</span><b id="silverKilo">—</b></div></div><div id="silverPeekStatus" class="gold-status">Awaiting Indian benchmark…</div></div>
 
   <div class="card">
    <h3>Nifty 50 Breadth</h3>
@@ -403,6 +414,7 @@ main{padding:12px}
  <div class="card">
   <h3>MoneyMantra 9 Finance AI</h3>
   <div class="ss" id="aiStatus" style="margin-bottom:9px">Concise Finance AI: answers in up to 3 simple sentences. Current market questions use the latest proxy data; web search is used only when fresh external information is needed.</div>
+  <div style="display:flex;gap:7px;justify-content:flex-end;margin:-2px 0 8px"><button class="btn soft" onclick="startNewFinanceChat()">New chat / Clear</button></div>
   <div id="chat" class="chat"><div class="msg bot">Ask me about markets, mutual funds, SIPs, insurance, personal finance, risk, asset allocation, financial concepts or the current market. For current-market questions I use the latest Worker market context; for general finance I answer educationally.</div></div>
   <div class="chatrow"><input id="q" placeholder="Ask any finance question..." onkeydown="if(event.key==='Enter')askAI()"/><button id="askBtn" class="btn primary" onclick="askAI()">Ask</button></div>
  </div>
@@ -426,8 +438,10 @@ main{padding:12px}
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px">
      <button class="btn primary" onclick="generateReport('current')">Current Brief</button>
      <button class="btn soft" onclick="generateReport('close')">Closing Report</button>
+     <button class="btn soft" onclick="copyMarketReport()">Copy report</button>
+     <button class="btn soft" onclick="openReportShare()">Share on WhatsApp</button>
    </div>
-   <div id="reportBox" class="reportbox">Refresh market data, then choose the report you need.</div>
+   <div id="reportBox" class="reportbox">Refresh market data, then choose the report you need.</div><div class="ss" id="reportStatus" style="margin-top:8px">Generate a brief before copying or sharing.</div>
  </div>
 </section>
 
@@ -520,7 +534,7 @@ let nextRefreshAt=null;
 let refreshInFlight=false;
 let lastRefreshCompletedAt=0;
 
-function fmtNum(n){return n==null?'--':Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}
+function fmtNum(n){return n==null||n===''||!Number.isFinite(Number(n))?'—':Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}
 function fmtPct(p){if(p==null||Number.isNaN(Number(p)))return '--';const n=Number(p);return `${n>=0?'+':''}${n.toFixed(2)}%`}
 function cls(p){return p>0?'up':p<0?'down':'flat'}
 function icon(p){return p>0?'🟢':p<0?'🔴':'🟡'}
@@ -778,8 +792,8 @@ function render(){
  document.getElementById('sgxSession').textContent=sgxSessionStatus();
  updateMetalsSession();
  renderSGX();
- document.getElementById('radScore').textContent=(m.score>0?'+':'')+m.score;
- document.getElementById('radLabel').textContent=m.state+' · '+m.confidence+'%';
+ document.getElementById('radScore').textContent=Number.isFinite(marketData.nifty?.pct)?(m.score>0?'+':'')+m.score:'—';
+ document.getElementById('radLabel').textContent=Number.isFinite(marketData.nifty?.pct)?m.state+' · '+m.confidence+'%':'DATA UNAVAILABLE';
  const deg=clamp(50+m.score*.5,4,96);
  document.getElementById('gauge').style.background=`conic-gradient(#4CC58F 0 ${deg}%,rgba(255,255,255,.13) ${deg}% 100%)`;
  setValue('nifty',marketData.nifty?.price,marketData.nifty?.pct);
@@ -795,15 +809,15 @@ function render(){
  document.getElementById('marketPill').textContent='● '+marketStatus().toUpperCase();
  document.getElementById('radGift').textContent='GIFT '+icon(marketData.gift?.pct);
  document.getElementById('radPrice').textContent='PRICE '+icon(marketData.nifty?.pct);
- document.getElementById('radVix').textContent='VIX '+(marketData.vix?.pct>0?'🔴':marketData.vix?.pct<0?'🟢':'🟡');
+ document.getElementById('radVix').textContent='VIX '+(!Number.isFinite(marketData.vix?.pct)?'◌':marketData.vix.pct>0?'🔴':marketData.vix.pct<0?'🟢':'🟡');
  document.getElementById('radBank').textContent='BANK '+icon(marketData.bank?.pct);
  const sectorPos=marketData.sectors?.filter(x=>x[2]>0).length||0;
- document.getElementById('radBreadth').textContent='SECTORS '+(sectorPos>=8?'🟢':sectorPos>=5?'🟡':'🔴');
+ document.getElementById('radBreadth').textContent='SECTORS '+(!marketData.sectors?.length?'◌':sectorPos/marketData.sectors.length>=.67?'🟢':sectorPos/marketData.sectors.length>=.40?'🟡':'🔴');
  document.getElementById('radGlobal').textContent='GLOBAL '+(marketData.globalAligned===true?'🟢':marketData.globalAligned===false?'🔴':'◌');
  document.getElementById('giftMarket').textContent=fmtPct(marketData.gift?.pct);
  document.getElementById('giftDot').className='dot '+(marketData.gift?.pct>0?'g':marketData.gift?.pct<0?'r':'a');
- document.getElementById('advVal').textContent=marketData.breadth?.adv??'--';
- document.getElementById('decVal').textContent=marketData.breadth?.dec??'--';
+ document.getElementById('advVal').textContent=marketData.breadth?.adv??'—';
+ document.getElementById('decVal').textContent=marketData.breadth?.dec??'—';
  document.getElementById('breadthStamp').textContent=marketData.breadth?`Latest available breadth source: ${marketData.breadth.source} · ${marketData.breadth.time}`:'Breadth source unavailable';
  const note=document.getElementById('marketFeedNotice');
  if(note){
@@ -902,10 +916,42 @@ function drawTrend(){
    const path=pts.map((p,i)=>`${i?'L':'M'} ${xFor(p.time).toFixed(1)} ${yFor(p.pct).toFixed(1)}`).join(' ');
    const area=path+` L ${xFor(pts[pts.length-1].time)} ${H-B} L ${xFor(pts[0].time)} ${H-B} Z`;
    svg.insertAdjacentHTML('beforeend',`<path class="trendarea" d="${area}"/><path class="trendline" d="${path}"/>`);
-   pts.forEach(p=>svg.insertAdjacentHTML('beforeend',`<circle cx="${xFor(p.time)}" cy="${yFor(p.pct)}" r="2.7" fill="#28719F"/>`));
+   pts.forEach(p=>svg.insertAdjacentHTML('beforeend',`<circle cx="${xFor(p.time)}" cy="${yFor(p.pct)}" r="2.7" fill="#28719F"><title>${p.time} · ${fmtPct(p.pct)}</title></circle>`));
+   bindChartHover(svg,pts,{width:W,x:p=>xFor(p.time),y:p=>yFor(p.pct),label:p=>`Nifty ${p.time} IST · ${fmtPct(p.pct)}`},'trendReadout');
  } else {
    svg.insertAdjacentHTML('beforeend',`<text class="axis" x="138" y="82" style="font-size:11px">Refresh to load intraday trend</text>`);
  }
+}
+function bindChartHover(svg,records,coordinates,readout){
+ if(!svg||!records?.length)return;
+ const all=records.map((r,i)=>({r,x:coordinates.x(r,i),y:coordinates.y(r,i)})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+ if(!all.length)return;
+ const label=typeof readout==='string'?document.getElementById(readout):readout;
+ const svgNS='http://www.w3.org/2000/svg';
+ let marker=svg.querySelector('.active-chart-marker');
+ if(!marker){marker=document.createElementNS(svgNS,'circle');marker.setAttribute('class','active-chart-marker');marker.setAttribute('r','5');marker.setAttribute('fill','#EABF49');marker.setAttribute('stroke','#12354A');marker.setAttribute('stroke-width','2');marker.setAttribute('pointer-events','none');svg.appendChild(marker)}
+ const show=p=>{marker.setAttribute('cx',p.x);marker.setAttribute('cy',p.y);marker.style.display='';if(label)label.textContent=coordinates.label(p.r)};
+ marker.style.display='none';
+ svg.addEventListener('pointermove',e=>{const rect=svg.getBoundingClientRect();if(!rect.width)return;const vx=(e.clientX-rect.left)/rect.width*coordinates.width;let nearest=all[0];for(const p of all)if(Math.abs(p.x-vx)<Math.abs(nearest.x-vx))nearest=p;show(nearest)});
+ svg.addEventListener('pointerleave',()=>marker.style.display='none');
+ svg.addEventListener('click',e=>{const rect=svg.getBoundingClientRect();const vx=(e.clientX-rect.left)/rect.width*coordinates.width;let nearest=all[0];for(const p of all)if(Math.abs(p.x-vx)<Math.abs(nearest.x-vx))nearest=p;show(nearest)});
+ // Keyboard access: point labels are also represented in SVG <title> elements.
+}
+function renderHistoryChart(rows){
+ const svg=document.getElementById('historySvg'),readout=document.getElementById('historyTooltip');if(!svg)return;
+ svg.replaceChildren();
+ if(rows.length<2){readout.textContent='A history chart appears once two completed daily closes are available.';return}
+ const W=440,H=180,L=58,R=15,T=15,B=35;
+ const vals=rows.map(r=>Number(r.close)),mn=Math.min(...vals),mx=Math.max(...vals),pad=Math.max((mx-mn)*.15,mx*.003,1),min=mn-pad,max=mx+pad;
+ const x=(r,i)=>L+i/(rows.length-1)*(W-L-R),y=r=>T+(max-Number(r.close))/(max-min)*(H-T-B);
+ const ticks=[min,(min+max)/2,max];
+ ticks.forEach(v=>svg.insertAdjacentHTML('beforeend',`<line x1="${L}" y1="${y({close:v})}" x2="${W-R}" y2="${y({close:v})}" stroke="#E3E9E7"/><text x="1" y="${y({close:v})+4}" font-size="10" fill="#6D7E86">${Math.round(v).toLocaleString('en-IN')}</text>`));
+ const path=rows.map((r,i)=>`${i?'L':'M'} ${x(r,i).toFixed(2)} ${y(r).toFixed(2)}`).join(' ');
+ svg.insertAdjacentHTML('beforeend',`<path d="${path}" fill="none" stroke="#1879A5" stroke-width="2.7" stroke-linejoin="round"/>`);
+ for(const i of [0,Math.floor((rows.length-1)/2),rows.length-1]){const r=rows[i];svg.insertAdjacentHTML('beforeend',`<text x="${Math.max(1,x(r,i)-26)}" y="${H-10}" font-size="10" fill="#687880">${r.date.slice(5)}</text>`)}
+ rows.forEach((r,i)=>svg.insertAdjacentHTML('beforeend',`<circle cx="${x(r,i)}" cy="${y(r)}" r="3" fill="#197DA5" class="chart-point" tabindex="0"><title>${r.date}: ${fmtNum(r.close)}</title></circle>`));
+ readout.textContent=`${rows.at(-1).date}: close ${fmtNum(rows.at(-1).close)} · touch or hover a point for details`;
+ bindChartHover(svg,rows,{width:W,x,y,label:r=>`${r.date} · Close ${fmtNum(Number(r.close))}${r.changePct!=null&&Number.isFinite(Number(r.changePct))?' · '+fmtPct(Number(r.changePct)):''}`},readout);
 }
 function timeIST(epoch){
  return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000));
@@ -1024,6 +1070,7 @@ async function refreshAll(manual=false){
    const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225',sgx:'^STI'};
    let results=[], got={};
    if(proxyPack){
+     marketData.breadth=null;
      Object.entries(proxyPack.quotes).forEach(([k,q])=>{
        got[k]={__proxyNormalized:q,__route:'Cloudflare Worker'};
        liveCount++;
@@ -1102,7 +1149,7 @@ async function refreshAll(manual=false){
      const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
      return q.pct;
    }).filter(Number.isFinite);
-   if(globalPcts.length)marketData.globalAligned=globalPcts.reduce((a,b)=>a+b,0)>=0;
+   marketData.globalAligned=globalPcts.length?globalPcts.reduce((a,b)=>a+b,0)>=0:null;
 
    if(liveCount>=3){
       lastSuccessfulMode='live';
@@ -1140,7 +1187,7 @@ async function refreshAll(manual=false){
    if(prev&&Number.isFinite(prev.score)){
      const d=cur.score-prev.score;
      document.getElementById('changeBox').className='alert '+(Math.abs(d)<8?'amber':d>0?'green':'red');
-     document.getElementById('changeBox').innerHTML=`<b>Pulse ${d>=0?'strengthened':'weakened'} by ${Math.abs(d)} points</b><br/>Previous saved reading: ${prev.score>0?'+':''}${prev.score}. Current reading: ${cur.score>0?'+':''}${cur.score}.`;
+     document.getElementById('changeBox').innerHTML=`<b>${d===0?'Pulse unchanged':`Pulse ${d>0?'strengthened':'weakened'} by ${Math.abs(d)} points`}</b><br/>Previous saved reading: ${prev.score>0?'+':''}${prev.score}. Current reading: ${cur.score>0?'+':''}${cur.score}.`;
    }
    localStorage.setItem('mm9PulsePrev',JSON.stringify({score:cur.score,time:Date.now()}));
    if(selectedPulseSymbol!=='^NSEI'||selectedFrame!=='current') maybeRefreshPulse();
@@ -1313,6 +1360,7 @@ async function openSectorDetail(name){
      <div class="sector-chart-wrap">
        <div style="font-size:10px;font-weight:900;margin-bottom:6px">Intraday sector trend</div>
        ${sectorMiniChart(d.timeline||[])}
+       <div id="sectorChartReadout" class="chart-readout">Tap or hover over the chart to see its percentage value.</div>
      </div>
      <div class="detailsection">
        <h4>Scope & key drivers</h4>
@@ -1333,6 +1381,12 @@ async function openSectorDetail(name){
      </div>`;
    if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
    document.getElementById('detailBody').innerHTML=body;
+   const sectorSvg=document.querySelector('#detailBody .sector-chart-wrap svg');
+   if(sectorSvg && Array.isArray(d.timeline)&&d.timeline.length>1){
+     const vals=d.timeline.map(p=>Number(p.pct)).filter(Number.isFinite);
+     const miniMax=Math.max(...vals,0.2),miniMin=Math.min(...vals,-0.2),miniRange=miniMax-miniMin||1;
+     bindChartHover(sectorSvg,d.timeline,{width:390,x:(p,i)=>28+i/(d.timeline.length-1)*(390-28-8),y:p=>8+(miniMax-Number(p.pct))/miniRange*(125-8-18),label:p=>`${p.time||''} IST · ${fmtPct(Number(p.pct))}`},'sectorChartReadout');
+   }
  }catch(e){
    if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
    const current=document.getElementById('detailBody');
@@ -1603,43 +1657,40 @@ function openDetail(type,arg){
 }
 
 function quick(x){document.getElementById('q').value=x;askAI()}
+let financeChatHistory=[],chatGeneration=0;
+function startNewFinanceChat(){
+ chatGeneration++;financeChatHistory=[];
+ const box=document.getElementById('chat');box.replaceChildren();
+ const intro=document.createElement('div');intro.className='msg bot';intro.textContent='New conversation. Ask about markets, Indian gold/silver rates, a selected NSE stock, investments or finance concepts.';box.appendChild(intro);
+ document.getElementById('aiStatus').textContent='New chat · previous conversation context cleared';
+}
+function getAppAIContext(){
+ const minimal={asOf:marketData.timestamp,marketSession:marketStatus(),selectedSymbol:selectedPulseSymbol,selectedName:activeSymbolName(),timeframe:selectedFrame,quote:latestPulsePack?.quote||null,
+  recentCloses:selectedHistoricalRows().slice(-5),nifty:marketData.nifty,bankNifty:marketData.bank,sensex:marketData.sensex,vix:marketData.vix,giftNifty:marketData.gift,
+  sectors:(marketData.sectors||[]).map(s=>({name:s[0],pct:s[2]})),
+  gold:goldQuote?.kind==='india-daily-benchmark'?{source:'India daily benchmark',date:goldQuote.publishedDate,rate24kInrPerGram:goldQuote.spot24kInrPerGram,rate22kInrPerGram:goldRateFor(GOLD_GRADES[2])}:null,
+  silver:silverQuote?.kind==='india-daily-benchmark'?{source:'India daily benchmark',date:silverQuote.publishedDate,priceInrPerGram:silverQuote.priceInrPerGram,priceInrPerKg:silverQuote.priceInrPerKg}:null};
+ return minimal;
+}
 async function askAI(){
  const q=document.getElementById('q'),chat=document.getElementById('chat'),btn=document.getElementById('askBtn');
- const text=q.value.trim();if(!text)return;
- const u=document.createElement('div');u.className='msg user';u.textContent=text;chat.appendChild(u);
- q.value='';btn.disabled=true;btn.textContent='Thinking…';
- const wait=document.createElement('div');wait.className='msg bot';wait.textContent='Checking finance and current market context…';chat.appendChild(wait);chat.scrollTop=chat.scrollHeight;
+ const question=q.value.trim();if(!question||btn.disabled)return;
+ const u=document.createElement('div');u.className='msg user';u.textContent=question;chat.appendChild(u);
+ q.value='';btn.disabled=true;btn.textContent='Thinking…';const generation=chatGeneration;
+ const wait=document.createElement('div');wait.className='msg bot';wait.textContent='Checking latest available app context…';chat.appendChild(wait);chat.scrollTop=chat.scrollHeight;
+ const previous=financeChatHistory.slice(-8).map(x=>({role:x.role,content:x.content.slice(0,900)}));
  try{
-   if(!API_BASE) throw new Error('Cloudflare proxy is not configured.');
-   const r=await fetch(`${API_BASE}/api/ask`,{
-     method:'POST',
-     headers:{'Content-Type':'application/json','Accept':'application/json'},
-     body:JSON.stringify({question:text})
-   });
-   const j=await r.json();
-   if(!r.ok||!j.ok) throw new Error(j.error||'Finance AI request failed.');
-   wait.textContent=j.answer||'No answer returned.';
-   if(Array.isArray(j.sources)&&j.sources.length){
-     const src=document.createElement('div');src.className='ss';src.style.margin='5px 0 9px 4px';
-     const label=document.createElement('span');label.textContent='Sources: ';src.appendChild(label);
-     j.sources.forEach((s,i)=>{
-       if(i) src.appendChild(document.createTextNode(' · '));
-       const a=document.createElement('a');
-       a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';
-       a.textContent=s.title||s.url;
-       a.style.color='var(--blue)';a.style.textDecoration='underline';
-       src.appendChild(a);
-     });
-     chat.appendChild(src);
-   }
-   const st=document.getElementById('aiStatus');
-   if(st) st.textContent=`Finance AI connected · ${j.model||'Cloudflare Workers AI'} · market context${j.webSearchUsed?' + web search':''}`;
- }catch(e){
-   wait.textContent=`Finance AI request could not complete. ${e?.message||'Please try again.'}`;
-   const st=document.getElementById('aiStatus');
-   if(st) st.textContent='Finance AI is connected, but this request could not be completed. Please try again.';
- }
- btn.disabled=false;btn.textContent='Ask';chat.scrollTop=chat.scrollHeight;
+  if(!API_BASE)throw Error('Market service not configured.');
+  const response=await fetch(`${API_BASE}/api/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,history:previous,appContext:getAppAIContext()})});
+  const j=await response.json();if(!response.ok||!j.ok)throw Error(j.error||'Finance AI not available');
+  if(generation!==chatGeneration)return;
+  const answer=String(j.answer||'No verified answer available.');wait.textContent=answer;
+  financeChatHistory.push({role:'user',content:question},{role:'assistant',content:answer});financeChatHistory=financeChatHistory.slice(-12);
+  if(j.sources?.length){const div=document.createElement('div');div.className='ss';div.textContent='Sources: ';
+    j.sources.slice(0,3).forEach(x=>{if(!/^https:\/\//.test(x.url))return;const a=document.createElement('a');a.href=x.url;a.textContent=x.title||'Source';a.target='_blank';a.rel='noopener noreferrer';div.appendChild(a);div.appendChild(document.createTextNode(' · '))});chat.appendChild(div)}
+  document.getElementById('aiStatus').textContent=`AI · ${j.model||'Verified app data'} · ${j.dataDate||'latest available context'}${j.webSearchUsed?' · web context':''}`;
+ }catch(e){if(generation===chatGeneration){wait.textContent=`I couldn't verify that answer: ${e.message}`;document.getElementById('aiStatus').textContent='Data/service unavailable; no price was fabricated.'}}
+ finally{if(generation===chatGeneration){btn.disabled=false;btn.textContent='Ask';chat.scrollTop=chat.scrollHeight}}
 }
 function currentBrief(){
  const m=scoreModel(), ss=sectorStats(), gs=globalStats(), ts=trendStats();
@@ -1648,6 +1699,7 @@ function currentBrief(){
  return `MONEYMANTRA 9 · CURRENT MARKET BRIEF
 
 Data as of: ${marketData.timestamp||'Unavailable'}
+Watching: ${activeSymbolName()} · ${selectedPulseSymbol} · ${selectedFrame}
 Market session: ${marketStatus()}
 Market Pulse: ${m.state} ${m.score>0?'+':''}${m.score}
 Confidence: ${m.confidence}%
@@ -1713,7 +1765,28 @@ This report is an educational market summary and not a personalized investment r
 function generateReport(mode){
  const box=document.getElementById('reportBox');
  box.textContent=mode==='close'?closingReport():currentBrief();
+ document.getElementById('reportStatus').textContent=mode==='close'?'Closing-format report generated · verify exchange date and timestamps before sharing':'Current market brief generated · verify timestamps before sharing';
 }
+function currentReportText(){const text=document.getElementById('reportBox')?.textContent?.trim()||'';return text.startsWith('MONEYMANTRA 9')?text:''}
+async function copyMarketReport(){
+ const t=currentReportText(),status=document.getElementById('reportStatus');if(!t){status.textContent='Generate a report before copying.';return}
+ try{await navigator.clipboard.writeText(t);status.textContent='Report copied to clipboard.'}catch(e){
+  const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();const okay=document.execCommand('copy');ta.remove();status.textContent=okay?'Report copied.':'Select the report text and copy manually.';
+ }
+}
+function openReportShare(){if(!currentReportText()){document.getElementById('reportStatus').textContent='Generate a report before sharing.';return}document.getElementById('waError').textContent='';document.getElementById('reportShareOverlay').style.display='grid'}
+function closeReportShare(){document.getElementById('reportShareOverlay').style.display='none'}
+function shareMarketReportWhatsApp(){
+ const text=currentReportText();if(!text){document.getElementById('waError').textContent='Generate a report first.';return}
+ let phone=document.getElementById('waPhone').value.replace(/[^\d]/g,'');
+ if(phone.startsWith('00'))phone=phone.slice(2);
+ if(phone.length===10)phone='91'+phone;
+ if(phone&&!/^\d{10,15}$/.test(phone)){document.getElementById('waError').textContent='Enter a valid 10-digit Indian mobile number or international number with country code.';return}
+ const url=phone?`https://wa.me/${phone}?text=${encodeURIComponent(text)}`:`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+ document.getElementById('reportStatus').textContent='WhatsApp is opening with a prefilled draft; you must review and send it yourself.';
+ closeReportShare();window.open(url,'_blank','noopener,noreferrer');
+}
+
 function toggleAuto(){
  autoRefresh=!autoRefresh;
  document.getElementById('autoSwitch').classList.toggle('on',autoRefresh);
@@ -1758,7 +1831,7 @@ function armNextRefresh(){
  },REFRESH_MS);
 }
 // === Multi-timeframe and Stock Watch UI ===
-const STOCK_CHOICES = [
+let STOCK_CHOICES = [
  ['RELIANCE.NS','Reliance Industries'], ['INFY.NS','Infosys'], ['TCS.NS','TCS'],
  ['HDFCBANK.NS','HDFC Bank'],['ICICIBANK.NS','ICICI Bank'],['SBIN.NS','SBI'],
  ['BHARTIARTL.NS','Bharti Airtel'],['ITC.NS','ITC'],['WIPRO.NS','Wipro'],
@@ -1776,10 +1849,44 @@ let lastPulseRefreshKey='';
 let lastPulseAttemptMs=0;
 let pulseDataBySymbol={};
 function formatPulseAsOf(s){return s||'Waiting for a completed interval'}
-function activeSymbolName(){return selectedPulseSymbol==='^NSEI'?'Indian Market':(STOCK_CHOICES.find(a=>a[0]===selectedPulseSymbol)?.[1]||selectedPulseSymbol)}
+function activeSymbolName(){return selectedPulseSymbol==='^NSEI'?'Indian Market':(STOCK_CHOICES.find(a=>a[0]===selectedPulseSymbol)?.[1]||latestPulsePack?.name||selectedPulseSymbol)}
 function pulseStatusText(){
  const times={current:'15-second check',m15:'15-minute completed candle',m30:'30-minute completed candle',h1:'60-minute completed candle',d1:'Completed daily close'};
  return times[selectedFrame];
+}
+const NSE_DIRECTORY_STORE='mm9_nse_directory_v1';
+let nseDirectoryLoaded=false;
+function indiaDateKey(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+function displayNSEDirectory(entries,sourceLabel){
+ if(!Array.isArray(entries)||!entries.length)return;
+ const seen=new Set(),merged=[];
+ for(const item of [...entries,...STOCK_CHOICES]){
+   if(!Array.isArray(item)||item.length<2)continue;
+   const symbol=String(item[0]).trim().toUpperCase(),name=String(item[1]).trim();
+   if(!/^[A-Z0-9&-]{1,20}\.NS$/.test(symbol)||seen.has(symbol))continue;
+   seen.add(symbol);merged.push([symbol,name]);
+ }
+ STOCK_CHOICES=merged.sort((a,b)=>a[1].localeCompare(b[1]));
+ const dl=document.getElementById('stockOptions'),fragment=document.createDocumentFragment();
+ for(const [sym,name] of STOCK_CHOICES){const opt=document.createElement('option');opt.value=sym;opt.label=name;fragment.appendChild(opt)}
+ dl.replaceChildren(fragment);
+ document.getElementById('tickerCatalogStatus').textContent=`${entries.length.toLocaleString('en-IN')} NSE tickers · ${sourceLabel} · updated daily when the source is accessible`;
+ nseDirectoryLoaded=true;
+}
+async function refreshNSEDirectory(){
+ const el=document.getElementById('tickerCatalogStatus');
+ let saved=null;try{saved=JSON.parse(localStorage.getItem(NSE_DIRECTORY_STORE)||'null')}catch(_){}
+ if(saved?.items?.length) displayNSEDirectory(saved.items,`saved list ${saved.date||''}`);
+ if(saved?.date===indiaDateKey())return;
+ if(!API_BASE){el.textContent='NSE directory requires the Cloudflare market service. Direct ticker entry remains available.';return}
+ try{
+   const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),11000);
+   let res;try{res=await fetch(`${API_BASE}/api/symbols`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(t)}
+   const j=await res.json();if(!res.ok||!j.ok||!Array.isArray(j.items)||!j.items.length)throw Error(j.error||'NSE directory blocked');
+   const rows=j.items.filter(x=>Array.isArray(x)&&x[0]&&x[1]);
+   displayNSEDirectory(rows,`NSE equity directory ${j.asOf||indiaDateKey()}`);
+   try{localStorage.setItem(NSE_DIRECTORY_STORE,JSON.stringify({date:indiaDateKey(),items:rows}))}catch(_){}
+ }catch(e){el.textContent=saved?.items?.length?`${saved.items.length} saved NSE tickers · live refresh unavailable (${e.message})`:`NSE catalog unavailable (${e.message}); all valid NSE tickers can still be entered manually.`}
 }
 function setWatchSymbol(s){
  const symbol=String(s||'').toUpperCase().trim();
@@ -1801,11 +1908,13 @@ function submitStockSearch(){
  const raw=document.getElementById('watchSearch').value.trim();
  if(!raw){setMarketWatch();return}
  const normalized=raw.toUpperCase().replace(/\s+/g,'');
- const found=STOCK_CHOICES.find(a=>a[0]===normalized||a[1].toUpperCase()===raw.toUpperCase()||a[0].split('.')[0]===normalized);
+ const choiceMatch=raw.match(/^(.+?)(?:\s*[—–|]\s*.+)?$/);
+ const chosen=choiceMatch?.[1]?.trim().toUpperCase()||'';
+ const found=STOCK_CHOICES.find(a=>a[0]===normalized||a[0]===chosen||a[1].toUpperCase()===raw.toUpperCase()||a[0].split('.')[0]===normalized);
  if(found){setWatchSymbol(found[0]);return}
  // Actual exchange code only; never guess a legal company name.
  if(/^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(normalized)){setWatchSymbol(normalized);return}
- document.getElementById('watchStatus').textContent='Please enter a valid exchange symbol such as RELIANCE.NS or INFY.NS; company-name lookup is limited to the suggested stocks.';
+ document.getElementById('watchStatus').textContent='Please enter a valid exchange symbol such as RELIANCE.NS or INFY.NS; try selecting a company from the refreshed NSE directory, or enter its ticker with .NS.';
 }
 function switchPulseFrame(frame){
  if(!['current','m15','m30','h1','d1'].includes(frame))return;
@@ -1855,7 +1964,7 @@ async function loadWatchPulse(force=false){
   renderWatchPulse();
  }catch(e){
   if(status)status.textContent=`Period data unavailable: ${e?.message||'Please retry.'}. Previous verified period retained if available.`;
- }finally{pulseFetchActive=false}
+ }finally{pulseFetchActive=false;if(symbol!==selectedPulseSymbol)setTimeout(()=>loadWatchPulse(true),20)}
 }
 function frameSignalForCurrent(pack){
  const price=pack?.quote?.price, pct=pack?.quote?.pct;
@@ -1904,35 +2013,39 @@ function renderWatchPulse(){
  }
  renderPulseJournal();
 }
-const OBSERVATION_KEY='mm9_pulse_observations_v1';
-function storedObservations(){try{return JSON.parse(localStorage.getItem(OBSERVATION_KEY)||'[]')}catch(_){return []}}
+const OBSERVATION_KEY='mm9_pulse_observations_v2';
+function storedObservations(){try{return JSON.parse(localStorage.getItem(OBSERVATION_KEY)||'{}')}catch(_){return {}}}
 function saveObservation(pack){
- const p=pack?.periods?.d1;
- if(!p?.complete||!p.sessionDate||!Number.isFinite(p.close))return;
- const rows=storedObservations().filter(r=>!(r.symbol===pack.symbol&&r.date===p.sessionDate));
- rows.push({symbol:pack.symbol,date:p.sessionDate,close:p.close,changePct:p.pct,score:p.score,signal:p.signal,recordedAt:new Date().toISOString()});
- rows.sort((a,b)=>a.date.localeCompare(b.date));
- try{localStorage.setItem(OBSERVATION_KEY,JSON.stringify(rows.slice(-350)))}catch(_){}
+ if(!pack?.symbol||!Array.isArray(pack.history))return;
+ const rows=pack.history.filter(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&Number.isFinite(Number(r.close)))
+    .map(r=>({symbol:pack.symbol,date:r.date,close:Number(r.close),changePct:r.pct==null?null:Number(r.pct)}))
+    .sort((a,b)=>a.date.localeCompare(b.date)).slice(-20);
+ if(!rows.length)return;
+ try{const all=storedObservations();all[pack.symbol]={rows,at:Date.now(),source:pack.source};localStorage.setItem(OBSERVATION_KEY,JSON.stringify(all))}catch(_){}
+}
+function selectedHistoricalRows(){
+ const rows=latestPulsePack?.symbol===selectedPulseSymbol&&Array.isArray(latestPulsePack.history)?latestPulsePack.history:null;
+ const saved=storedObservations()[selectedPulseSymbol]?.rows;
+ return (rows?.length?rows:saved||[]).filter(r=>r&&Number.isFinite(Number(r.close))).sort((a,b)=>a.date.localeCompare(b.date)).slice(-20);
 }
 function renderPulseJournal(){
- const rows=storedObservations().filter(r=>r.symbol===selectedPulseSymbol).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
- const ct=rows.length;
- document.getElementById('trialProgress').textContent=`${ct} / 20 distinct trading sessions recorded on this browser`;
+ const rows=selectedHistoricalRows(),ct=rows.length;
+ document.getElementById('trialProgress').textContent=`${ct} / 20 completed daily closes · ${activeSymbolName()}`;
  document.getElementById('trialBar').style.width=`${Math.min(100,ct*5)}%`;
- const body=document.getElementById('trialRows');body.innerHTML='';
- if(!rows.length){
-  const tr=document.createElement('tr');tr.innerHTML='<td colspan="4" style="padding:9px;color:#6E7A84">No sessions recorded yet. Open the app after a trading close to begin.</td>';body.appendChild(tr);
- }else for(const r of rows.slice(0,8)){
-  const tr=document.createElement('tr');for(const val of [r.date,fmtNum(r.close),fmtPct(r.changePct),r.signal]){const td=document.createElement('td');td.textContent=val;tr.appendChild(td)}body.appendChild(tr);
+ document.getElementById('historySourceStatus').textContent=ct?`Historical closes from ${latestPulsePack?.source||'last successful saved source'} · latest ${rows[ct-1].date}. Weekends and exchange holidays excluded. Historical observations are not backtested Pulse predictions.`:'No verified daily history yet. Select a symbol or refresh; source access may be temporarily blocked.';
+ const body=document.getElementById('trialRows');body.replaceChildren();
+ if(!rows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent='No historical price data available; no values invented.';tr.appendChild(td);body.appendChild(tr)}
+ else for(const r of rows.slice().reverse()){
+   const tr=document.createElement('tr');for(const val of [r.date,fmtNum(r.close),r.changePct!=null&&Number.isFinite(Number(r.changePct))?fmtPct(Number(r.changePct)):'—','Historical close']){const td=document.createElement('td');td.textContent=val;tr.appendChild(td)}body.appendChild(tr);
  }
+ renderHistoryChart(rows);
 }
 function exportPulseJournal(){
- const rows=storedObservations().filter(r=>r.symbol===selectedPulseSymbol).sort((a,b)=>a.date.localeCompare(b.date));
- if(!rows.length){document.getElementById('trialProgress').textContent='No sessions to export yet';return}
- const cells=[['Symbol','Date','Close','Daily change %','Pulse score','Pulse label','Recorded at'],...rows.map(r=>[r.symbol,r.date,r.close,r.changePct,r.score,r.signal,r.recordedAt])];
+ const rows=selectedHistoricalRows();if(!rows.length){document.getElementById('trialProgress').textContent='No verified daily closes available to export';return}
+ const cells=[['Symbol','Date','Close','Daily change %','Source'],...rows.map(r=>[selectedPulseSymbol,r.date,r.close,r.changePct??'',latestPulsePack?.source||'saved historical source'])];
  const csv=cells.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_observations.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_history.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function maybeRefreshPulse(){
  const key=intervalRefreshKey();
@@ -1959,6 +2072,8 @@ window.addEventListener('load',()=>{
  seedFallbackTimeline();
  marketData=JSON.parse(JSON.stringify(fallback));
  const restored=marketStatus()==='Closed' ? restoreIndianSnapshot() : false;
+ // The Worker does not currently publish verified constituent breadth. Never display the old 32/18 seed as a current reading.
+ marketData.breadth=null;
  if(!restored){
    ['nifty','bank','sensex','vix','gift'].forEach(k=>marketData[k]={price:null,pct:null,source:'Not yet refreshed'});
    marketData.sectors=[];
@@ -1979,6 +2094,7 @@ window.addEventListener('load',()=>{
    : 'Starting live refresh';
  setupAuto();
  renderWatchPulse();
+ refreshNSEDirectory();
  setTimeout(()=>loadWatchPulse(true),1100);
  const ps=document.getElementById('proxyStatus');
  if(ps) ps.textContent=API_BASE?`Connected: ${API_BASE}`:'Not configured yet';
@@ -1995,5 +2111,14 @@ window.addEventListener('focus',()=>{
 });
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
+<div id="reportShareOverlay" class="share-overlay" style="display:none" role="dialog" aria-modal="true" aria-label="Share market report">
+  <div class="share-modal">
+    <h3>Share MoneyMantra 9 report</h3>
+    <p style="font-size:12px;color:#64727C">Enter an Indian mobile number (optional), or leave blank to choose a contact in WhatsApp. Your message will open for review; sending requires your confirmation.</p>
+    <input id="waPhone" type="tel" inputmode="tel" placeholder="10-digit mobile number (optional)" aria-label="Recipient WhatsApp mobile number"/>
+    <div id="waError" class="ss" style="margin:8px 0;color:#B04848"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" onclick="shareMarketReportWhatsApp()">Open WhatsApp</button><button class="btn soft" onclick="closeReportShare()">Cancel</button></div>
+  </div>
+</div>
 </body>
 </html>
