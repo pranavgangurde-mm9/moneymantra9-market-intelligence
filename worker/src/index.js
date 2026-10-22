@@ -24,7 +24,7 @@ const SECTOR_SYMBOLS = {
 };
 
 
-const FULL_SECTOR_INDEX_NAMES = ["Auto", "Banking", "Capital Goods", "Cement", "Chemicals", "Commercial & Transport Services", "Construction", "Consumer Durables", "Consumer Services", "Financial Services", "Financial Services 25/50", "Financial Services Ex Bank", "FMCG", "Healthcare", "Hospitals", "Housing Finance", "Insurance", "IT", "Media", "Metal", "NBFC", "Oil and Gas", "Pharma", "Power", "Private Bank", "PSU Bank", "Realty", "REITs & Realty", "Retail", "Telecommunications", "Nifty500 Healthcare", "MidSmall Financial Services", "MidSmall Healthcare", "MidSmall IT & Telecom"];
+const FULL_SECTOR_INDEX_NAMES = ["IT", "Auto", "Pharma", "FMCG", "Metal", "Realty", "Energy", "PSU Bank", "Financial Services", "Infrastructure", "Media", "Banking"];
 const OFFICIAL_SECTOR_CONSTITUENT_FILES = {"IT": "ind_niftyitlist.csv", "Auto": "ind_niftyautolist.csv", "Banking": "ind_niftybanklist.csv", "Pharma": "ind_niftypharmalist.csv", "FMCG": "ind_niftyfmcglist.csv", "Metal": "ind_niftymetallist.csv", "Realty": "ind_niftyrealtylist.csv", "PSU Bank": "ind_niftypsubanklist.csv", "Financial Services": "ind_niftyfinancelist.csv", "Media": "ind_niftymedialist.csv", "Healthcare": "ind_niftyhealthcarelist.csv", "Private Bank": "ind_niftyprivatebanklist.csv", "Consumer Durables": "ind_niftyconsumerdurableslist.csv", "Oil and Gas": "ind_niftyoilgaslist.csv"};
 
 const SECTOR_META = {
@@ -367,7 +367,7 @@ Instructions:
 }
 
 async function sectorConstituents(name,ctx){
- if(!FULL_SECTOR_INDEX_NAMES.includes(name))return {ok:false,error:'Unknown index'};
+ if(!(['IT','Auto','Pharma','FMCG','Metal','Realty','Energy','PSU Bank','Financial Services','Infrastructure','Media','Banking'].includes(name)))return {ok:false,error:'Sector not part of the 12 monitored sectors'};
  const file=OFFICIAL_SECTOR_CONSTITUENT_FILES[name];
  const base='https://www.niftyindices.com/IndexConstituent/';
  if(!file)return {ok:false,error:'Public CSV mapping not confirmed for this index. Use the NSE Indices download link.',sourceUrl:officialSectorLink(name)};
@@ -399,6 +399,13 @@ async function computeNiftyBreadth(){
    if(!r.ok)throw Error('Exchange API returned HTTP '+r.status);
    data=await r.json();
   }finally{clearTimeout(timer)}
+  const summary=data.advance||data.advances||null;
+  if(summary&&typeof summary==='object'){
+    const adv=num(summary.advances),dec=num(summary.declines),unchanged=num(summary.unchanged);
+    if([adv,dec,unchanged].every(Number.isInteger)&&adv+dec+unchanged===50){
+      return {ok:true,adv,dec,unchanged,coverage:50,asOf:data.timestamp||'Exchange timestamp unavailable',source:'NSE official Nifty 50 advances/declines',sourceUrl:url};
+    }
+  }
   const rows=Array.isArray(data.data)?data.data:[];
   const constituents=rows.filter(x=>x?.symbol&&x.symbol!=='NIFTY 50'&&x.symbol!=='NIFTY50'&&num(x.pChange)!==null);
   if(constituents.length!==50)throw Error(`Received ${constituents.length} valid constituent changes instead of 50`);
@@ -1160,6 +1167,77 @@ async function cityGoldEndpoint(request,env,ctx){
  return json({ok:false,city,error:'Configured city providers unavailable',detail:errors.join('; ').slice(0,240),sourceUrl:cityGoldUrl(city),retryLater:true},502,{'cache-control':'no-store'});
 }
 
+
+const GIFT_OFFICIAL_STATUS_URL='https://www.nseindia.com/api/marketStatus';
+function parseGiftNiftyMarketStatus(payload,now=Date.now()){
+ const row=payload?.giftnifty;
+ if(!row || String(row.SYMBOL||'').toUpperCase()!=='NIFTY')throw Error('Official market status has no GIFT Nifty future');
+ const price=num(row.LASTPRICE),pct=num(row.PERCHANGE);
+ if(price===null||price<5000||price>100000||pct===null||Math.abs(pct)>30)throw Error('GIFT quote price/change invalid');
+ const stamp=String(row.TIMESTMP||'').trim();
+ const match=stamp.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})\s+(\d{1,2}):(\d{2})$/);
+ if(!match)throw Error('GIFT quote timestamp missing/unrecognized');
+ const months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+ const month=months[match[2].toLowerCase()];if(month===undefined)throw Error('Invalid month');
+ const epoch=Date.UTC(+match[3],month,+match[1],+match[4],+match[5])-330*60000;
+ const ageMinutes=Math.round((now-epoch)/60000);
+ if(!Number.isFinite(epoch)||ageMinutes < -10||ageMinutes>72*60)throw Error('GIFT quote older than 72 hours or future-dated');
+ return {price,pct,epoch:Math.floor(epoch/1000),asOf:stamp+' IST',expiry:row.EXPIRYDATE||null,ageMinutes,
+  source:'NSE India market-status GIFT Nifty future (NSE IX)',isLive:ageMinutes<=5};
+}
+async function giftEndpoint(request,ctx){
+ const u=new URL(request.url),cache=caches.default,key=new Request(u.origin+'/api/gift?rev=r4');
+ const hit=await cache.match(key);if(hit)return hit;
+ const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),9000);
+ try{
+  const r=await fetch(GIFT_OFFICIAL_STATUS_URL,{signal:ctrl.signal,headers:{accept:'application/json',referer:'https://www.nseindia.com/', 'user-agent':'Mozilla/5.0 (compatible; MoneyMantra9/1.0)'},cf:{cacheTtl:30,cacheEverything:true}});
+  if(!r.ok)throw Error('Official quote endpoint HTTP '+r.status);
+  const quote=parseGiftNiftyMarketStatus(await r.json());
+  const response=json({ok:true,quote,checkedAt:new Date().toISOString(),sourceUrl:'https://www.nseindia.com/api/marketStatus'},200,{'cache-control':'public, max-age=30, s-maxage=30'});
+  ctx.waitUntil(cache.put(key,response.clone()));return response;
+ }catch(e){return json({ok:false,error:'GIFT Nifty official source unavailable: '+String(e?.message||e),sourceUrl:'https://www.nseix.com/',checkedAt:new Date().toISOString()},503,{'cache-control':'no-store'})}
+ finally{clearTimeout(timer)}
+}
+const BREADTH_LIST_CSV='https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv';
+async function breadthConstituentSymbols(){
+ const r=await fetch(BREADTH_LIST_CSV,{headers:{accept:'text/csv,text/plain,application/octet-stream'},cf:{cacheTtl:21600,cacheEverything:true}});
+ if(!r.ok)throw Error('Nifty 50 official constituent file HTTP '+r.status);
+ const body=await r.text();if(body.length>150000)throw Error('Unexpected constituent file size');
+ const lines=body.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+ const head=readCsvLine(lines.shift()||'').map(x=>x.trim().toLowerCase());
+ const si=head.findIndex(x=>x==='symbol'||x==='symbol '||x.includes('symbol'));
+ if(si<0)throw Error('NSE file missing Symbol header');
+ const names=lines.map(l=>readCsvLine(l)[si]?.trim()).filter(x=>/^[A-Z0-9&-]{1,20}$/.test(x||''));
+ if(names.length!==50||new Set(names).size!==50)throw Error(`Official constituent file has ${names.length} valid symbols, expected 50`);
+ return names;
+}
+function quoteDateIST(epochSecs){
+ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(epochSecs*1000));
+}
+async function breadthBatchEndpoint(request,ctx){
+ const u=new URL(request.url),part=Number(u.searchParams.get('part'));
+ if(!Number.isInteger(part)||part<0||part>1)return json({ok:false,error:'part must be 0 or 1'},400,{'cache-control':'no-store'});
+ const cache=caches.default,key=new Request(u.origin+`/api/breadth-batch?part=${part}&rev=r4`),cached=await cache.match(key);
+ if(cached)return cached;
+ try{
+  const names=(await breadthConstituentSymbols()).slice(part*25,part*25+25);
+  const items=[],errors=[];
+  // Small bounded concurrency reduces burst rate limits while remaining under Free Worker's 50 subrequest cap.
+  for(let offset=0;offset<25;offset+=5){
+   const results=await Promise.allSettled(names.slice(offset,offset+5).map(async symbol=>{
+     const q=normalizeChart(await fetchYahooChart(symbol+'.NS','1d','2d'));
+     if(q.epoch===null||q.pct===null||q.price===null)throw Error('Quote has no price or timestamp');
+     return {symbol,pct:q.pct,epoch:q.epoch,quoteDate:quoteDateIST(q.epoch)};
+   }));
+   results.forEach((r,i)=>{if(r.status==='fulfilled')items.push(r.value);else errors.push(String(r.reason?.message||r.reason))});
+  }
+  const dates=[...new Set(items.map(x=>x.quoteDate))];
+  if(items.length!==25||dates.length!==1)return json({ok:false,part,coverage:items.length,error:`Only ${items.length}/25 valid prices or dates disagree`,note:errors[0]||'Check provider limits'},503,{'cache-control':'no-store'});
+  const body={ok:true,part,snapshotDate:dates[0],items,source:'Yahoo Finance delayed NSE constituent chart quotes'};
+  const res=json(body,200,{'cache-control':'public, max-age=900, s-maxage=900'});ctx.waitUntil(cache.put(key,res.clone()));return res;
+ }catch(e){return json({ok:false,part,error:String(e?.message||e),sourceUrl:BREADTH_LIST_CSV},503,{'cache-control':'no-store'})}
+}
+
 export default {
   // Optional daily Cron at 07:15 IST; requires SYMBOLS_KV binding for durable cross-client storage.
   async scheduled(controller,env,ctx){
@@ -1222,6 +1300,8 @@ export default {
       const payload=await sectorConstituents(name,ctx);
       return json(payload,payload.ok?200:503,{'cache-control':payload.ok?'public, max-age=3600, s-maxage=21600':'no-store'});
     }
+    if(url.pathname==='/api/gift'&&request.method==='GET')return giftEndpoint(request,ctx);
+    if(url.pathname==='/api/breadth-batch'&&request.method==='GET')return breadthBatchEndpoint(request,ctx);
     if(url.pathname==='/api/breadth'&&request.method==='GET'){
       const cache=caches.default,key=new Request(`${url.origin}/api/breadth?v=r3`);
       const saved=await cache.match(key);if(saved)return saved;
