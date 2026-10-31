@@ -200,17 +200,14 @@ function normalizeChart(result, includeTimeline = false) {
     const ts = result.timestamp || [];
     const close = quote.close || [];
     const tz = "Asia/Kolkata";
-
+    const timelineTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false
+    });
     for (let i = 0; i < ts.length; i++) {
       const c = num(close[i]);
       if (c === null || prev === null || prev === 0) continue;
 
-      const time = new Intl.DateTimeFormat("en-GB", {
-        timeZone: tz,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
-      }).format(new Date(ts[i] * 1000));
+      const time = timelineTimeFormatter.format(new Date(ts[i] * 1000));
 
       const [h, m] = time.split(":").map(Number);
       const mins = h * 60 + m;
@@ -420,7 +417,7 @@ async function buildMarketPayload() {
   const coreEntries = await Promise.all(
     Object.entries(CORE_SYMBOLS).map(async ([key, symbol]) => {
       try {
-        const raw = await fetchYahooChart(symbol);
+        const raw = await fetchYahooChart(symbol, key === "nifty" ? "5m" : "1d", key === "nifty" ? "1d" : "1d");
         return [key, normalizeChart(raw, key === "nifty"), null];
       } catch (error) {
         return [key, null, error instanceof Error ? error.message : String(error)];
@@ -431,7 +428,7 @@ async function buildMarketPayload() {
   const sectorEntries = await Promise.all(
     Object.entries(SECTOR_SYMBOLS).map(async ([name, symbol]) => {
       try {
-        const raw = await fetchYahooChart(symbol);
+        const raw = await fetchYahooChart(symbol, "1d", "1d");
         const q = normalizeChart(raw, false);
         return [{ name, symbol, ...q }, null];
       } catch (error) {
@@ -797,15 +794,23 @@ ${JSON.stringify(safeHistory)}`;
   };
 }
 
+let marketBuildInFlight = null;
 async function marketResponse(request, ctx) {
   const url = new URL(request.url);
   const cache = caches.default;
-  const cacheKey = new Request(`${url.origin}/api/market?v=sgx-city-silver-1`, { method: "GET" });
+  const cacheKey = new Request(`${url.origin}/api/market?v=cpu-optimized-r5-1`, { method: "GET" });
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const payload = await buildMarketPayload();
-  const response = json(payload, payload.ok ? 200 : 502);
+  // Deduplicate simultaneous requests handled by the same Worker isolate.
+  // A 45-second cache avoids repeating roughly twenty provider fetches for every visitor.
+  if (!marketBuildInFlight) {
+    marketBuildInFlight = buildMarketPayload().finally(() => { marketBuildInFlight = null; });
+  }
+  const payload = await marketBuildInFlight;
+  const response = json(payload, payload.ok ? 200 : 502, {
+    "cache-control": payload.ok ? "public, max-age=45, s-maxage=45" : "no-store"
+  });
   if (payload.ok) ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
 }
