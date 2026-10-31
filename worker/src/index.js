@@ -942,6 +942,33 @@ function validPulseSymbol(input){
  if(s==='^NSEI')return s;
  return /^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(s)?s:null;
 }
+function intradayPriceSeries(five,daily){
+ if(!five)return null;
+ const bars=chartFiveMinuteBars(five).filter(b=>Number.isFinite(b.close)&&b.date&&b.time);
+ if(!bars.length)return null;
+ // Select the latest session with observed prices; never blend different trading dates.
+ const sessions=[...new Set(bars.map(b=>b.date))].sort();
+ const sessionDate=sessions[sessions.length-1];
+ const latest=bars.filter(b=>b.date===sessionDate).sort((a,b)=>a.epoch-b.epoch);
+ if(!latest.length)return null;
+ let previousClose=null;
+ if(daily){
+  const dates=daily.timestamp||[],values=daily.indicators?.quote?.[0]?.close||[];
+  for(let i=0;i<dates.length;i++){
+   const v=num(values[i]),at=Number(dates[i])*1000;
+   if(v===null||!Number.isFinite(at))continue;
+   const d=pulseParts(at).date;
+   if(d<sessionDate)previousClose=v;
+  }
+ }
+ if(previousClose===null){
+  const ref=num(five.meta?.previousClose??five.meta?.chartPreviousClose);
+  if(ref!==null)previousClose=ref;
+ }
+ const points=latest.map(b=>({time:b.time,price:b.close,epoch:b.epoch,pct:previousClose!==null?pulsePct(b.close,previousClose):null}));
+ return {sessionDate,previousClose,points,source:'Public 5-minute price bars · delayed when provider is delayed',lastBar:points[points.length-1].time};
+}
+
 async function buildPulsePayload(symbol){
  const stockMode=symbol!=='^NSEI';
  const symbols=stockMode?[symbol,'^NSEI']:[symbol,'^NSEBANK','^BSESN'];
@@ -968,7 +995,8 @@ async function buildPulsePayload(symbol){
  const quote=normalizeChart(latestRaw,false);
  const session=pulseParts((quote.epoch||0)*1000);
  const history=primary.daily?dailyObservations(primary.daily,now).history:[];
- return {ok:true,symbol,name:stockMode?(PULSE_SYMBOLS[symbol]||latestRaw.meta?.longName||latestRaw.meta?.shortName||symbol):'Nifty 50 Market',kind:stockMode?'stock':'market',quote,quoteDate:session.date,quoteTime:session.time,periods,history,source:'Public chart feed (may be delayed)',generatedAt:new Date().toISOString(),notes:'Timeframe readings use completed bars only; daily reading uses completed trading days. Scores describe past momentum, not forecast success.'};
+ const intraday=intradayPriceSeries(primary.five,primary.daily);
+ return {ok:true,symbol,name:stockMode?(PULSE_SYMBOLS[symbol]||latestRaw.meta?.longName||latestRaw.meta?.shortName||symbol):'Nifty 50 Market',kind:stockMode?'stock':'market',quote,quoteDate:session.date,quoteTime:session.time,periods,history,intraday,source:'Public chart feed (may be delayed)',generatedAt:new Date().toISOString(),notes:'Timeframe readings use completed bars only; daily reading uses completed trading days. Scores describe past momentum, not forecast success.'};
 }
 
 
@@ -1285,7 +1313,7 @@ export default {
       if (!symbol) return json({ok:false,error:"Use a valid NSE ticker ending .NS, BSE ticker ending .BO, or the Indian Market option."},400,{"cache-control":"no-store"});
       try {
         const cache = caches.default;
-        const cacheKey = new Request(`${url.origin}/api/pulse?symbol=${encodeURIComponent(symbol)}&v=1`);
+        const cacheKey = new Request(`${url.origin}/api/pulse?symbol=${encodeURIComponent(symbol)}&v=r5`);
         const cached = await cache.match(cacheKey);
         if (cached) return cached;
         const payload = await buildPulsePayload(symbol);

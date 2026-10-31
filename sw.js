@@ -1,5 +1,5 @@
 /* MoneyMantra 9 Market Intelligence: website navigation reliability hotfix */
-const CACHE_NAME = 'mm9-static-assets-20261031-nav-fix';
+const CACHE_NAME = 'mm9-static-assets-20261031-r5';
 const STATIC_ASSETS = ['./brand-logo.png','./icon-192.png','./icon-512.png','./manifest.json'];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
