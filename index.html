@@ -71,7 +71,8 @@ main{padding:12px}
 .explain{display:flex;gap:9px;padding:12px;border:1px dashed #CFE2D7;background:#F8FBF9;border-radius:14px;font-size:11px;line-height:1.52}
 .alert{padding:11px;border-radius:13px;margin:8px 0;border-left:4px solid;font-size:11px;line-height:1.45}.alert.green{background:var(--gsoft);border-color:var(--green)}.alert.amber{background:var(--asoft);border-color:var(--amber)}.alert.red{background:var(--rsoft);border-color:var(--red)}
 .timeline-wrap{overflow:hidden;border:1px solid var(--line);border-radius:15px;background:#FBFCFC}
-.chartbox{height:185px;padding:10px 8px 0}.chartbox svg{width:100%;height:100%;overflow:visible}
+.chartbox{height:clamp(136px,40vw,185px);padding:8px 6px 0;min-width:0}
+.chartbox svg{display:block;width:100%;height:100%;overflow:visible}
 .slotrow{display:flex;gap:7px;overflow-x:auto;padding:10px;border-top:1px solid var(--line)}
 .slot{min-width:75px;border:1px solid var(--line);border-radius:11px;padding:8px;background:#fff}.slot b{font-size:10px}.slot small{display:block;font-size:8px;color:var(--muted);margin-top:3px}.slot .pct{font-size:11px;font-weight:950;margin-top:4px}
 .axis{font-size:8px;fill:#7C878D}.gridline{stroke:#E6EBE8;stroke-width:1}.zeroline{stroke:#BFCAC5;stroke-width:1;stroke-dasharray:3 3}.trendline{fill:none;stroke:#28719F;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.trendarea{fill:rgba(40,113,159,.08)}
@@ -197,16 +198,22 @@ main{padding:12px}
 .journal-status{font-size:10px;color:var(--muted);line-height:1.5}
 @media(max-width:340px){.pulse-tab{padding:7px}.watch-search-row button{padding:9px 7px}}
 
-.chart-readout{margin-top:7px;padding:8px 10px;border:1px solid #DCE9E8;background:#F3F8F7;border-radius:10px;font-size:11px;color:#10344B;min-height:33px}
+.chart-readout{margin-top:4px;padding:8px 10px;border:1px solid #DCE9E8;background:#F3F8F7;border-radius:10px;font-size:11px;color:#10344B;min-height:33px}
 .chart-point{cursor:crosshair;outline:none}.chart-point:focus{stroke:#10344B;stroke-width:3}.chart-hotspot{cursor:crosshair}
 .share-overlay{position:fixed;inset:0;background:#10233088;z-index:350;display:grid;place-items:center;padding:16px}
 .share-modal{width:min(430px,100%);background:#fff;border-radius:20px;padding:20px;box-shadow:0 18px 50px #0003}
 .share-modal h3{font-size:18px;margin:0 0 5px}.share-modal input{width:100%;padding:13px;border-radius:12px;border:1px solid #CBD8D7;font-size:15px}
-#historySvg{width:100%;height:auto;touch-action:pan-y}.chartbox svg{touch-action:pan-y}
+#historySvg{width:100%;height:100%;touch-action:pan-y}.chartbox svg{touch-action:pan-y}
 @media(min-width:650px){.share-modal{max-width:450px}}
 
 .history-move{display:inline-block;font-weight:900;padding:5px 8px;border-radius:9px;min-width:68px;text-align:center;white-space:nowrap}
 .history-move.up{color:#076e4d;background:#e1f7ed}.history-move.down{color:#a62d38;background:#ffeaec}.history-move.flat{color:#4a5960;background:#ecf1f2}
+.history-price-change{font-weight:850;display:inline-block;border-radius:8px;padding:5px 7px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.history-price-change.up{background:#e1f7ed;color:#076e4d}
+.history-price-change.down{background:#ffeaec;color:#a62d38}
+.history-price-change.flat{background:#ecf1f2;color:#4a5960}
+@media(max-width:390px){.journal-table{font-size:9.5px}.journal-table th,.journal-table td{padding:7px 2px}.history-move,.history-price-change{min-width:0;padding:5px 6px}}
+
 .report-mode-btn.active-report{background:#12384e!important;color:#fff!important;border-color:#12384e!important}
 .sector-list-note{font-size:10px;line-height:1.5;color:#67777e;margin:7px 0}
 .sector-members{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.sector-member{background:#f2f6f6;border:1px solid #e0e8e5;border-radius:8px;padding:6px 9px;font-size:10px}
@@ -225,7 +232,7 @@ main{padding:12px}
 .period-reading-help{font-size:10px;line-height:1.55;color:#c5dbe6;margin-top:8px}
 .period-gauge .score{font-size:33px}.period-gauge .glabel{font-size:10px}
 .period-explainer .ss{line-height:1.6}
-#trendSvg{width:100%;height:auto;touch-action:pan-y}
+#trendSvg{width:100%;height:100%;touch-action:pan-y}
 @media(max-width:365px){.period-pulse-visual{grid-template-columns:108px minmax(0,1fr);gap:11px}.period-gauge{width:108px;height:108px}.period-gauge:before{width:80px;height:80px}.period-gauge .score{font-size:28px}.period-reading .period-state{font-size:18px}}
 
 /* Razorpay review / policy navigation: no sticky overlay covers links. */
@@ -243,7 +250,7 @@ main{padding:12px}
  <div class="brand">
   <div class="brand-left">
    <img class="brand-logo" src="brand-logo.png" alt="MoneyMantra 9"/>
-   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2.1</small></div>
+   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2.2</small></div>
   </div>
   <div id="marketPill" class="live-pill">● CONNECTING</div>
  </div>
@@ -380,8 +387,9 @@ main{padding:12px}
    <div class="journal-bar"><span id="trialBar"></span></div>
    <div class="journal-status" id="historySourceStatus">Loading the last 20 completed sessions from the historical price source. Each symbol has its own dated series.</div>
    <div class="chartbox" style="margin-top:12px"><svg id="historySvg" viewBox="0 0 440 180" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Twenty trading-session closing price chart"></svg></div>
-   <div id="historyTooltip" class="chart-readout">Touch or hover over the line to inspect a close.</div>
-   <div style="overflow:auto;margin:9px 0"><table class="journal-table"><thead><tr><th>Session</th><th>Close</th><th>Move</th><th>Label</th></tr></thead><tbody id="trialRows"></tbody></table></div>
+   <div id="historyTooltip" class="chart-readout">Tap or hover to see closing price, price change and percentage.</div>
+   <div class="ss" id="historyChangeHelp" style="margin-top:7px">Price change from the previous trading close (₹ for NSE shares; points for Nifty). An unavailable prior close is shown as —.</div>
+   <div style="overflow:auto;margin:8px 0"><table class="journal-table"><thead><tr><th>Session</th><th>Close</th><th>Move %</th><th id="priceChangeHeading">Change (₹)</th></tr></thead><tbody id="trialRows"></tbody></table></div>
    <button class="btn soft" onclick="exportPulseJournal()">Export 20-day history (CSV)</button>
    <div class="ss" style="margin-top:8px">History is fetched on demand for the selected symbol; a cache may be used if the source is temporarily unavailable. This is historical price analysis, not evidence that an earlier Pulse predicted the market.</div>
  </div>
@@ -1135,7 +1143,7 @@ function renderHistoryChart(rows){
  for(const i of [0,Math.floor((rows.length-1)/2),rows.length-1]){const r=rows[i];svg.insertAdjacentHTML('beforeend',`<text x="${Math.max(1,x(r,i)-26)}" y="${H-10}" font-size="10" fill="#687880">${r.date.slice(5)}</text>`)}
  rows.forEach((r,i)=>svg.insertAdjacentHTML('beforeend',`<circle cx="${x(r,i)}" cy="${y(r)}" r="3" fill="#197DA5" class="chart-point" tabindex="0"><title>${r.date}: ${fmtNum(r.close)}</title></circle>`));
  readout.textContent=`${rows.at(-1).date}: close ${fmtNum(rows.at(-1).close)} · touch or hover a point for details`;
- bindChartHover(svg,rows,{width:W,x,y,label:r=>`${r.date} · ${selectedPulseSymbol==='^NSEI'?'Nifty 50':'Stock'} close ${fmtNum(Number(r.close))} · ${r.changePct!=null&&Number.isFinite(Number(r.changePct))?fmtPct(Number(r.changePct)):'prior day unavailable'}`},readout);
+ bindChartHover(svg,rows,{width:W,x,y,label:r=>`${r.date} · ${selectedPulseSymbol==='^NSEI'?'Nifty 50':'Stock'} close ${fmtNum(Number(r.close))} · ${r.changeValue!=null?historyDeltaText(r.changeValue)+' '+historyDeltaUnit():'change unavailable'} · ${r.changePct!=null&&Number.isFinite(Number(r.changePct))?fmtPct(Number(r.changePct)):'% unavailable'}`},readout);
 }
 function timeIST(epoch){
  return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000));
@@ -2384,7 +2392,7 @@ function saveObservation(pack){
  if(!pack?.symbol||!Array.isArray(pack.history))return;
  const rows=pack.history.filter(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&Number.isFinite(Number(r.close)))
     .map(r=>({symbol:pack.symbol,date:r.date,close:Number(r.close),changePct:nullableQuoteNumber(r.changePct??r.pct)}))
-    .sort((a,b)=>a.date.localeCompare(b.date)).slice(-20);
+    .sort((a,b)=>a.date.localeCompare(b.date)).slice(-21);
  if(!rows.length)return;
  try{const all=storedObservations();all[pack.symbol]={rows,at:Date.now(),source:pack.source};localStorage.setItem(OBSERVATION_KEY,JSON.stringify(all))}catch(_){}
 }
@@ -2395,9 +2403,17 @@ function selectedHistoricalRows(){
  // Source may provide `pct`; legacy saved entries used `changePct`.
  return ordered.map((r,i)=>{
   const stated=nullableQuoteNumber(r.changePct??r.pct);
-  const computed=i>0&&Number(ordered[i-1].close)>0?(Number(r.close)/Number(ordered[i-1].close)-1)*100:null;
-  return {...r,close:Number(r.close),changePct:stated??computed,computedFromClose:stated===null&&computed!==null};
+  const previous=i>0?Number(ordered[i-1].close):null;
+  const computed=previous!==null&&previous>0?(Number(r.close)/previous-1)*100:null;
+  const changeValue=previous!==null&&Number.isFinite(previous)?Number(r.close)-previous:null;
+  return {...r,close:Number(r.close),changeValue,changePct:stated??computed,computedFromClose:stated===null&&computed!==null};
  }).slice(-20);
+}
+function historyDeltaUnit(){return String(selectedPulseSymbol||'').startsWith('^')?'pts':'₹'}
+function historyDeltaText(change){
+ const v=nullableQuoteNumber(change);if(v===null)return '—';
+ const val=Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+ return `${v>0?'+':v<0?'−':''}${val}`;
 }
 function renderPulseJournal(){
  const rows=selectedHistoricalRows(),ct=rows.length;
@@ -2406,6 +2422,7 @@ function renderPulseJournal(){
  document.getElementById('trialProgress').textContent=`${ct} / 20 completed daily closes · ${activeSymbolName()}`;
  document.getElementById('trialBar').style.width=`${Math.min(100,ct*5)}%`;
  document.getElementById('historySourceStatus').textContent=ct?`Historical closes from ${latestPulsePack?.source||'last successful saved source'} · latest ${rows[ct-1].date}. Weekends and exchange holidays excluded. Historical observations are not backtested Pulse predictions.`:'No verified daily history yet. Select a symbol or refresh; source access may be temporarily blocked.';
+ const changeHeader=document.getElementById('priceChangeHeading');if(changeHeader)changeHeader.textContent=historyDeltaUnit()==='pts'?'Change (pts)':'Change (₹)';
  const body=document.getElementById('trialRows');body.replaceChildren();
  if(!rows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent='No historical price data available; no values invented.';tr.appendChild(td);body.appendChild(tr)}
  else for(const r of rows.slice().reverse()){
@@ -2415,14 +2432,22 @@ function renderPulseJournal(){
    const moveCell=document.createElement('td');
    const value=nullableQuoteNumber(r.changePct);
    if(value!==null){const chip=document.createElement('span');chip.className='history-move '+(value>0?'up':value<0?'down':'flat');chip.textContent=fmtPct(value);chip.title='Change from preceding trading close';moveCell.appendChild(chip)}else moveCell.textContent='—';
-   const label=document.createElement('td');label.textContent='Historical close';
-   tr.append(dateCell,closeCell,moveCell,label);body.appendChild(tr);
+   const deltaCell=document.createElement('td');
+   const absChange=nullableQuoteNumber(r.changeValue);
+   if(absChange!==null){
+     const deltaBadge=document.createElement('span');
+     deltaBadge.className='history-price-change '+(absChange>0?'up':absChange<0?'down':'flat');
+     deltaBadge.textContent=historyDeltaText(absChange);
+     deltaBadge.title='Close-to-close change in '+(historyDeltaUnit()==='pts'?'index points':'rupees');
+     deltaCell.appendChild(deltaBadge);
+   }else{deltaCell.textContent='—';deltaCell.title='Earlier closing price unavailable'}
+   tr.append(dateCell,closeCell,moveCell,deltaCell);body.appendChild(tr);
  }
  renderHistoryChart(rows);
 }
 function exportPulseJournal(){
  const rows=selectedHistoricalRows();if(!rows.length){document.getElementById('trialProgress').textContent='No verified daily closes available to export';return}
- const cells=[['Symbol','Date','Close','Daily change %','Source'],...rows.map(r=>[selectedPulseSymbol,r.date,r.close,r.changePct??'',latestPulsePack?.source||'saved historical source'])];
+ const cells=[['Symbol','Date','Close','Daily change %','Price change','Price change unit','Source'],...rows.map(r=>[selectedPulseSymbol,r.date,r.close,r.changePct??'',r.changeValue??'',historyDeltaUnit(),latestPulsePack?.source||'saved historical source'])];
  const csv=cells.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_history.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
