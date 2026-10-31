@@ -28,12 +28,20 @@ button{cursor:pointer}
 .brand small{font-size:10px;color:var(--muted)}
 .live-pill{white-space:nowrap;font-size:9px;padding:7px 9px;border-radius:999px;border:1px solid var(--line);background:#fff;font-weight:900;color:var(--green)}
 .refreshbar{position:sticky;top:74px;z-index:29;background:rgba(246,248,247,.97);backdrop-filter:blur(12px);padding:7px 12px 9px;border-bottom:1px solid rgba(227,233,230,.9)}
-.refreshwrap{display:flex;gap:8px;align-items:center}
-.refreshbtn{flex:1;border:0;border-radius:14px;background:var(--navy);color:#fff;padding:11px 12px;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 6px 16px rgba(16,52,75,.16)}
+/* Mobile-first refresh toolbar: don't let long data status compress the action button. */
+.refreshwrap{display:block;min-width:0}
+.refreshbtn{width:100%;min-height:48px;border:0;border-radius:14px;background:var(--navy);color:#fff;padding:12px 16px;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:9px;white-space:nowrap;box-shadow:0 6px 16px rgba(16,52,75,.16)}
 .refreshbtn:disabled{opacity:.65}
-.refreshmeta{min-width:116px;text-align:right}
-.refreshmeta b{font-size:10px;display:block}
-.refreshmeta span{font-size:9px;color:var(--muted)}
+.refreshmeta{min-width:0;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;text-align:left}
+.refreshmeta b{font-size:10px;line-height:1.35;white-space:nowrap}
+.refreshmeta span{font-size:10px;color:var(--muted);line-height:1.35;text-align:right;white-space:nowrap}
+.refreshdetails{margin-top:4px;font-size:10px;color:var(--muted)}
+.refreshdetails summary{cursor:pointer;color:var(--navy);font-weight:750;display:inline-flex;align-items:center;gap:4px;list-style:none;padding:4px 2px;touch-action:manipulation}
+.refreshdetails summary::-webkit-details-marker{display:none}
+.refreshdetails summary:after{content:'⌄';display:inline-block;font-size:13px;line-height:.7;transition:transform .15s}
+.refreshdetails[open] summary:after{transform:rotate(180deg)}
+.refreshdetails #sourceMode{display:block;line-height:1.45;margin:4px 0 3px;padding:8px 10px;border-radius:9px;background:#EEF3F1;color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:340px){.refreshmeta b,.refreshmeta span{font-size:9px}.refreshbtn{font-size:13px}}
 main{padding:12px}
 .section{display:none}.section.active{display:block}
 .hero{background:linear-gradient(145deg,#123B56,#0D2E44);color:#fff;border-radius:22px;padding:17px;box-shadow:var(--shadow);position:relative;overflow:hidden}
@@ -227,7 +235,7 @@ main{padding:12px}
 .mm9-policy-strip a,.mm9-policy-foot a,.mm9-compliance-card a{position:relative;pointer-events:auto;touch-action:manipulation}
 
 </style>
-<meta name="mm9-build" content="2026.10.31-r5-stock-charts-consistent-pulse"/>
+<meta name="mm9-build" content="2026.10.31-r52-1-mobile-refresh-layout"/>
 </head>
 <body>
 <div class="app">
@@ -235,7 +243,7 @@ main{padding:12px}
  <div class="brand">
   <div class="brand-left">
    <img class="brand-logo" src="brand-logo.png" alt="MoneyMantra 9"/>
-   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2</small></div>
+   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2.1</small></div>
   </div>
   <div id="marketPill" class="live-pill">● CONNECTING</div>
  </div>
@@ -244,15 +252,18 @@ main{padding:12px}
 
 <div class="refreshbar">
  <div class="refreshwrap">
-  <button id="refreshBtn" class="refreshbtn" onclick="refreshAll(true)">
-   <span class="refresh-icon">↻</span><span class="spinner"></span><span>Refresh Live Data</span>
+  <button id="refreshBtn" class="refreshbtn" type="button" onclick="refreshAll(true)" aria-label="Refresh available market data">
+   <span class="refresh-icon" aria-hidden="true">↻</span><span class="spinner" aria-hidden="true"></span><span>Refresh Live Data</span>
   </button>
-  <div class="refreshmeta">
-    <b id="lastUpdate">Not refreshed yet</b>
-    <span id="sourceMode">Checking sources (does not reload the page)</span>
-    <span id="nextRefresh" style="display:block;margin-top:2px">Next refresh: --:--</span>
-  </div>
  </div>
+ <div class="refreshmeta" aria-live="polite">
+   <b id="lastUpdate">Not refreshed yet</b>
+   <span id="nextRefresh">Next refresh: --:--</span>
+ </div>
+ <details class="refreshdetails">
+   <summary>Data source details</summary>
+   <span id="sourceMode">Checking sources (does not reload the page)</span>
+ </details>
 </div>
 
 <main>
