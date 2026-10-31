@@ -235,7 +235,7 @@ main{padding:12px}
  <div class="brand">
   <div class="brand-left">
    <img class="brand-logo" src="brand-logo.png" alt="MoneyMantra 9"/>
-   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.1</small></div>
+   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2</small></div>
   </div>
   <div id="marketPill" class="live-pill">● CONNECTING</div>
  </div>
@@ -983,7 +983,8 @@ function restoreGiftSnapshot(){
  }catch(_){}
 }
 async function refreshGiftNifty(force=false){
- if(!API_BASE||giftFetchInFlight||(!force&&Date.now()-lastGiftFetchAt<60000))return;
+ const giftPollingMs=/^Session /.test(giftSessionStatus())&&!giftFetchError?15000:60000;
+ if(!API_BASE||giftFetchInFlight||(!force&&Date.now()-lastGiftFetchAt<giftPollingMs))return;
  giftFetchInFlight=true;lastGiftFetchAt=Date.now();
  try{
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),11000);
@@ -1128,26 +1129,80 @@ function renderHistoryChart(rows){
 function timeIST(epoch){
  return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000));
 }
-async function fetchProxyMarket(){
- if(!API_BASE || API_BASE.includes('REPLACE-WITH-YOUR-WORKER')) return null;
- const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),12000);
+// R5.2 split fast quote updates from slower sector feeds to avoid Worker CPU exhaustion.
+let latestIndexGroups={},lastQuoteGroupCheck={},lastQuoteGroupAttempt={};
+let sectorSnapshotRequest=null,lastSectorSnapshotAt=0;
+async function fetchFastGroup(group){
+ lastQuoteGroupAttempt[group]=Date.now();
+ const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);
  try{
-   const r=await fetch(`${API_BASE}/api/market`,{
-     cache:'no-store',
-     signal:controller.signal,
-     headers:{'Accept':'application/json'}
+   const r=await fetch(`${API_BASE}/api/live-quotes?group=${encodeURIComponent(group)}`,{
+      cache:'no-store',signal:ctl.signal,headers:{Accept:'application/json'}
    });
-   if(!r.ok){
-     console.warn('MoneyMantra market data service returned HTTP',r.status);
-     throw new Error(`Proxy HTTP ${r.status}`);
-   }
-   const j=await r.json();
-   if(!j || !j.ok || !j.quotes) throw new Error('Invalid proxy response');
+   if(!r.ok)throw Error(group+' quote service HTTP '+r.status);
+   const j=await r.json();if(!j?.ok||!j.quotes)throw Error(group+' quote response unavailable');
+   latestIndexGroups[group]=j;
+   lastQuoteGroupCheck[group]=Date.now();
    return j;
- }finally{
-   clearTimeout(timer);
+ }finally{clearTimeout(timer)}
+}
+function isQuoteGroupActive(group){
+ if(group==='india')return marketOpenNow();
+ const u=usSessionStatus(),sgx=sgxSessionStatus();
+ return u==='Regular'||u==='Pre-Market'||u==='After-Hours'||sgx.startsWith('Open')||sgx.includes('auction');
+}
+async function fetchProxyMarket(force=false){
+ if(!API_BASE || API_BASE.includes('REPLACE-WITH-YOUR-WORKER'))return null;
+ // Both groups may return independently. A failed US source must not blank Indian quotes.
+ const settled=await Promise.allSettled(['india','global'].map(group=>{
+    const active=isQuoteGroupActive(group);
+    const previous=latestIndexGroups[group];
+    const sinceSuccess=Date.now()-(lastQuoteGroupCheck[group]||0);
+    const sinceAttempt=Date.now()-(lastQuoteGroupAttempt[group]||0);
+    // Keep the UI 15s check, but avoid wasteful requests for already-closed exchanges.
+    const interval=active?14500:120000;
+    if(!force&&previous&&sinceSuccess<interval)return Promise.resolve(previous);
+    if(!force&&sinceAttempt<30000&&!previous)return Promise.reject(Error(group+' source retry pending'));
+    return fetchFastGroup(group);
+ }));
+ const quotes={},errors={},groups=[];
+ for(let i=0;i<settled.length;i++){
+   const group=['india','global'][i],result=settled[i];
+   if(result.status==='fulfilled'){
+      Object.assign(quotes,result.value.quotes||{});
+      Object.assign(errors,result.value.errors||{});
+      groups.push(group);
+   }else if(latestIndexGroups[group]?.quotes){
+      // Keep last verified readings, retaining their original source epoch.
+      Object.assign(quotes,latestIndexGroups[group].quotes);
+      errors[group]=String(result.reason?.message||result.reason);
+   }else errors[group]=String(result.reason?.message||result.reason);
  }
+ if(!Object.keys(quotes).length)throw Error('Market quote sources unavailable; last saved readings retained.');
+ return {ok:true,quotes,errors,groups,source:'Cloudflare grouped market feeds',generatedAt:new Date().toISOString(),sectors:[]};
+}
+async function refreshSectorSnapshot(force=false){
+ if(!API_BASE || sectorSnapshotRequest || (!force&&Date.now()-lastSectorSnapshotAt<90000))return;
+ lastSectorSnapshotAt=Date.now();
+ sectorSnapshotRequest=(async()=>{
+   const jobs=await Promise.allSettled([0,1,2].map(async part=>{
+     const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),11000);
+     try{
+       const res=await fetch(`${API_BASE}/api/sector-quotes?part=${part}`,{cache:'no-store',signal:ctl.signal});
+       if(!res.ok)throw Error('Sector feed '+part+' HTTP '+res.status);
+       const j=await res.json();return Array.isArray(j.sectors)?j.sectors:[];
+     }finally{clearTimeout(timer)}
+   }));
+   const merged=new Map((marketData.sectors||[]).map(item=>[item[0],item]));
+   for(const job of jobs)if(job.status==='fulfilled')for(const s of job.value){
+      if(s.name && Number.isFinite(Number(s.price))&&Number.isFinite(Number(s.pct))) merged.set(s.name,[s.name,Number(s.price),Number(s.pct)]);
+   }
+   // Banking uses the existing Bank Nifty quote.
+   const bank=marketData.bank;
+   if(Number.isFinite(Number(bank?.price))&&Number.isFinite(Number(bank?.pct)))merged.set('Banking',['Banking',Number(bank.price),Number(bank.pct)]);
+   if(merged.size){marketData.sectors=[...merged.values()];marketData.sectorSource='Split, timestamped sector quotes via Cloudflare';render()}
+ })().catch(e=>console.warn('Sector detail update unavailable',e)).finally(()=>sectorSnapshotRequest=null);
+ return sectorSnapshotRequest;
 }
 function nullableQuoteNumber(v){return v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null)}
 function normalizedFromProxy(q){
@@ -1241,7 +1296,8 @@ async function refreshAll(manual=false){
  let liveCount=0, routeNames=new Set(), hadAnyError=false, proxyError="";
  try{
    let proxyPack=null;
-   try{ proxyPack=await fetchProxyMarket(); }catch(proxyErr){ proxyPack=null; proxyError=String(proxyErr?.message||proxyErr); }
+   try{ proxyPack=await fetchProxyMarket(manual); }catch(proxyErr){ proxyPack=null; proxyError=String(proxyErr?.message||proxyErr); }
+   refreshSectorSnapshot(false);
    const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225',sgx:'^STI'};
    let results=[], got={};
    if(proxyPack){
@@ -1331,14 +1387,14 @@ async function refreshAll(manual=false){
       marketData.mode=proxyPack?'Cloudflare Worker market data':'Public web market data';
       const routes=[...routeNames].join(' + ');
       document.getElementById('sourceMode').textContent=proxyPack
-        ? `${liveCount} market sources refreshed via Cloudflare Worker`
+        ? `${liveCount} source quotes checked via Cloudflare Worker · see quote timestamps`
         : `${liveCount} sources refreshed${routes?' · '+routes:''}`;
    }else if(liveCount>0){
       lastSuccessfulMode='live';
       // Keep the actual per-quote observation timestamp rather than the check time.
       marketData.mode=proxyPack?'Cloudflare Worker (partial)':'Public source (partial)';
       document.getElementById('sourceMode').textContent=proxyPack
-        ? `Partial Cloudflare refresh: ${liveCount} source${liveCount===1?'':'s'}`
+        ? `Partial quote check: ${liveCount} source${liveCount===1?'':'s'}`
         : `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`;
    }else{
       lastSuccessfulMode='fallback';
@@ -1849,7 +1905,7 @@ function openDetail(type,arg){
  }
 
  if(type==='indiaSession'){
-   return showSheet('Indian Cash Market',marketStatus(),`<div class="detailsection"><h4>NSE equity session</h4><div style="font-size:10px;line-height:1.6">Normal equity trading runs from 09:15 to 15:30 IST on trading days. During that session the app attempts a refresh every 15 seconds. After 15:30, the last successful Indian cash-market snapshot is retained while GIFT Nifty and overseas markets can continue updating.</div></div>`);
+   return showSheet('Indian Cash Market',marketStatus(),`<div class="detailsection"><h4>NSE equity session</h4><div style="font-size:10px;line-height:1.6">Normal equity trading runs from 09:15 to 15:30 IST on trading days. The app checks available sources every 15 seconds while visible. New cash-market quotes appear only when the upstream source publishes them. After 15:30 the latest verified Indian close is retained; GIFT and overseas quotes have separate timestamps.</div></div>`);
  }
  if(type==='global'){
    const g=marketData.global||{};
@@ -2042,9 +2098,9 @@ function toggleAuto(){
  setupAuto();
 }
 function effectiveRefreshMs(){
-  // During non-Indian-market hours retain the last completed NSE snapshot;
-  // fewer checks reduce CPU load and do not imply every quote is newly published.
-  return marketStatus()==='Closed'?60000:REFRESH_MS;
+  // 15-second foreground CHECKS, not guaranteed 15-second fresh exchange prices.
+  // Closed-market grouped quotes are cached longer by the Worker.
+  return REFRESH_MS;
 }
 function scheduleNextRefresh(){
  if(!autoRefresh){
@@ -2061,7 +2117,7 @@ function updateCountdown(){
  if(!nextRefreshAt){el.textContent='Next refresh: 00:15';return}
  const left=Math.max(0,nextRefreshAt-Date.now());
  const s=Math.ceil(left/1000),m=Math.floor(s/60),sec=s%60;
- const prefix=marketStatus()==='Closed'?'Global check':'Next refresh';
+ const prefix=marketStatus()==='Closed'?'Next source check':'Next refresh';
  el.textContent=`${prefix}: ${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 function setupAuto(){
@@ -2361,6 +2417,9 @@ function exportPulseJournal(){
  a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_history.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function maybeRefreshPulse(){
+ // A share has no fresh intraday candle after the Indian equity session closes.
+ // Retry at most once per 2 minutes off-hours, unless the user explicitly requests it.
+ if(selectedFrame==='current'&&!marketOpenNow()&&lastPulseAttemptMs&&Date.now()-lastPulseAttemptMs<120000)return;
  const key=intervalRefreshKey();
  if(selectedFrame==='current'&&selectedPulseSymbol==='^NSEI')return;
  const now=calendarIST();
@@ -2372,7 +2431,7 @@ function maybeRefreshPulse(){
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
- document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false);refreshNiftyBreadth(false)}window.scrollTo({top:0,behavior:'smooth'});
+ document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false);refreshNiftyBreadth(false);refreshSectorSnapshot(false)}window.scrollTo({top:0,behavior:'smooth'});
 }));
 window.addEventListener('load',()=>{
  try{const saved=JSON.parse(localStorage.getItem('mm9IndiaGoldBenchmark')||'null');if(saved?.data?.kind==='india-daily-benchmark'&&Date.now()-saved.at<7*86400000)goldQuote=saved.data;}catch(_){}
@@ -2412,7 +2471,7 @@ window.addEventListener('load',()=>{
  setupAuto();
  renderWatchPulse();
  refreshNSEDirectory();
- setTimeout(()=>loadWatchPulse(true),1100);setTimeout(()=>refreshNiftyBreadth(false),1600);setTimeout(()=>refreshGiftNifty(true),600);
+ setTimeout(()=>loadWatchPulse(true),1100);setTimeout(()=>refreshNiftyBreadth(false),1600);setTimeout(()=>refreshGiftNifty(true),600);setTimeout(()=>refreshSectorSnapshot(true),800);
  const ps=document.getElementById('proxyStatus');
  if(ps) ps.textContent=API_BASE?`Connected: ${API_BASE}`:'Not configured yet';
  setTimeout(()=>refreshAll(false),250);

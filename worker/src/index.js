@@ -199,17 +199,15 @@ function normalizeChart(result, includeTimeline = false) {
   if (includeTimeline) {
     const ts = result.timestamp || [];
     const close = quote.close || [];
-    const tz = "Asia/Kolkata";
-    const timelineTimeFormatter = new Intl.DateTimeFormat("en-GB", {
-      timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false
-    });
+    // IST has a fixed UTC+05:30 offset; using UTC methods avoids repeated
+    // locale formatting in a CPU-constrained Cloudflare Worker.
     for (let i = 0; i < ts.length; i++) {
       const c = num(close[i]);
       if (c === null || prev === null || prev === 0) continue;
 
-      const time = timelineTimeFormatter.format(new Date(ts[i] * 1000));
-
-      const [h, m] = time.split(":").map(Number);
+      const d=new Date((ts[i]+19800)*1000);
+      const h=d.getUTCHours(),m=d.getUTCMinutes();
+      const time=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
       const mins = h * 60 + m;
       if (mins >= 555 && mins <= 930) {
         out.timeline.push({
@@ -815,6 +813,67 @@ async function marketResponse(request, ctx) {
   return response;
 }
 
+
+// R5.2: compact quote batches to keep each Worker request under the Free CPU budget.
+// We never claim new exchange data until the returned quote epoch changes.
+function exchangeOpenForCache(group) {
+  // This controls source polling, not official exchange-holiday determination.
+  const zone=group==='india'?'Asia/Kolkata':'America/New_York';
+  const pieces=new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+  const x=Object.fromEntries(pieces.map(p=>[p.type,p.value]));
+  if(x.weekday==='Sat'||x.weekday==='Sun')return false;
+  const minute=Number(x.hour)*60+Number(x.minute);
+  if(group==='india')return minute>=540&&minute<=955;
+  // Keep checking global quotes during European/US overlap as well as the US session.
+  return minute>=240&&minute<=1200;
+}
+const QUOTE_GROUPS={
+  india:['nifty','bank','sensex','vix'],
+  global:['nasdaq','sp','nikkei','sgx']
+};
+const SECTOR_QUOTE_BATCHES=[
+  ['IT','Auto','Pharma','FMCG'],
+  ['Metal','Realty','Energy','PSU Bank'],
+  ['Financial Services','Infrastructure','Media']
+];
+async function fastQuoteBatch(request,ctx){
+  const u=new URL(request.url),group=u.searchParams.get('group');
+  if(!Object.hasOwn(QUOTE_GROUPS,group)) return json({ok:false,error:'Use group=india or global'},400,{'cache-control':'no-store'});
+  const active=exchangeOpenForCache(group);
+  const ttl=active?14:90; // Live polling around 15s; long-lived close snapshots off-session.
+  const key=new Request(u.origin+'/api/live-quotes?group='+group+'&v=r52');
+  const hit=await caches.default.match(key);if(hit)return hit;
+  const entries=await Promise.all(QUOTE_GROUPS[group].map(async k=>{
+    try{
+      const symbol=CORE_SYMBOLS[k];
+      const chart=await fetchYahooChart(symbol,k==='nifty'?'5m':'1d','1d');
+      return [k,normalizeChart(chart,k==='nifty'),null];
+    }catch(e){return [k,null,String(e?.message||e)]}
+  }));
+  const quotes={},errors={};
+  for(const [k,val,error] of entries){if(val&&val.price!==null)quotes[k]=val;if(error)errors[k]=error}
+  const body={ok:Object.keys(quotes).length>0,group,generatedAt:new Date().toISOString(),source:'Cloudflare Worker → delayed public market chart sources',quotes,errors,cacheSeconds:ttl};
+  const res=json(body,body.ok?200:503,{'cache-control':body.ok?`public,max-age=${ttl},s-maxage=${ttl}`:'no-store'});
+  if(body.ok)ctx.waitUntil(caches.default.put(key,res.clone()));
+  return res;
+}
+async function sectorQuoteBatch(request,ctx){
+  const u=new URL(request.url),part=Number(u.searchParams.get('part'));
+  if(!Number.isInteger(part)||part<0||part>=SECTOR_QUOTE_BATCHES.length)return json({ok:false,error:'Use part=0,1,2'},400,{'cache-control':'no-store'});
+  const ttl=90,key=new Request(u.origin+`/api/sector-quotes?part=${part}&v=r52`);
+  const hit=await caches.default.match(key);if(hit)return hit;
+  const entries=await Promise.all(SECTOR_QUOTE_BATCHES[part].map(async name=>{
+    try{
+      const symbol=SECTOR_SYMBOLS[name],chart=await fetchYahooChart(symbol,'1d','1d');
+      const d=normalizeChart(chart,false);return d.price!==null&&d.pct!==null?{name,symbol,...d}:null;
+    }catch(_){return null}
+  }));
+  const sectors=entries.filter(Boolean),body={ok:sectors.length>0,sectors,part,checkedAt:new Date().toISOString(),source:'Public sector index quotations',unavailableCount:SECTOR_QUOTE_BATCHES[part].length-sectors.length};
+  const res=json(body,body.ok?200:503,{'cache-control':body.ok?`public,max-age=${ttl},s-maxage=${ttl}`:'no-store'});
+  if(body.ok)ctx.waitUntil(caches.default.put(key,res.clone()));
+  return res;
+}
+
 // === Multi-timeframe Pulse Engine (Indian cash market, timezone IST) ===
 
 const NSE_DIRECTORY_URL='https://archives.nseindia.com/content/equities/EQUITY_L.csv';
@@ -1219,14 +1278,14 @@ function parseGiftNiftyMarketStatus(payload,now=Date.now()){
   source:'NSE India market-status GIFT Nifty future (NSE IX)',isLive:ageMinutes<=5};
 }
 async function giftEndpoint(request,ctx){
- const u=new URL(request.url),cache=caches.default,key=new Request(u.origin+'/api/gift?rev=r4');
+ const u=new URL(request.url),cache=caches.default,key=new Request(u.origin+'/api/gift?rev=r52');
  const hit=await cache.match(key);if(hit)return hit;
  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),9000);
  try{
-  const r=await fetch(GIFT_OFFICIAL_STATUS_URL,{signal:ctrl.signal,headers:{accept:'application/json',referer:'https://www.nseindia.com/', 'user-agent':'Mozilla/5.0 (compatible; MoneyMantra9/1.0)'},cf:{cacheTtl:30,cacheEverything:true}});
+  const r=await fetch(GIFT_OFFICIAL_STATUS_URL,{signal:ctrl.signal,headers:{accept:'application/json',referer:'https://www.nseindia.com/', 'user-agent':'Mozilla/5.0 (compatible; MoneyMantra9/1.0)'},cf:{cacheTtl:14,cacheEverything:true}});
   if(!r.ok)throw Error('Official quote endpoint HTTP '+r.status);
   const quote=parseGiftNiftyMarketStatus(await r.json());
-  const response=json({ok:true,quote,checkedAt:new Date().toISOString(),sourceUrl:'https://www.nseindia.com/api/marketStatus'},200,{'cache-control':'public, max-age=30, s-maxage=30'});
+  const response=json({ok:true,quote,checkedAt:new Date().toISOString(),sourceUrl:'https://www.nseindia.com/api/marketStatus'},200,{'cache-control':'public, max-age=14, s-maxage=14'});
   ctx.waitUntil(cache.put(key,response.clone()));return response;
  }catch(e){return json({ok:false,error:'GIFT Nifty official source unavailable: '+String(e?.message||e),sourceUrl:'https://www.nseix.com/',checkedAt:new Date().toISOString()},503,{'cache-control':'no-store'})}
  finally{clearTimeout(timer)}
@@ -1306,6 +1365,12 @@ export default {
     }
     if ((url.pathname === "/api/city-gold" || url.pathname === "/api/city-gold/") && request.method === "GET") {
       return cityGoldEndpoint(request,env,ctx);
+    }
+    if (url.pathname === "/api/live-quotes" && request.method === "GET") {
+      return fastQuoteBatch(request,ctx);
+    }
+    if (url.pathname === "/api/sector-quotes" && request.method === "GET") {
+      return sectorQuoteBatch(request,ctx);
     }
     if (url.pathname === "/api/market" && request.method === "GET") {
       return marketResponse(request, ctx);
