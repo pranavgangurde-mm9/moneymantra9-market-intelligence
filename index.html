@@ -329,8 +329,25 @@ main{padding:12px}
 .position-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.position-actions>*{flex:1;min-width:128px;text-align:center}
 .position-upload summary{list-style:none}.position-upload summary::-webkit-details-marker{display:none}.position-upload summary:after{content:'⌄';float:right}
 .position-upload[open] summary:after{content:'⌃'}
+
+/* App Info: clear version identification without crowding the mobile More tab */
+.app-info-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.app-info-title h3{margin-bottom:4px}
+.app-info-label{font-size:10px;color:var(--muted);font-weight:700}
+.app-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.app-info-stat{border:1px solid var(--line);background:#FBFCFC;border-radius:13px;padding:11px 12px;min-width:0}
+.app-info-stat span{display:block;font-size:10px;color:var(--muted);margin-bottom:4px}
+.app-info-stat strong{display:block;font-size:18px;color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.3}
+.app-info-release{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:10px;color:var(--muted);line-height:1.6}
+.app-info-release b{font-size:11px;color:var(--navy);overflow-wrap:anywhere}
+.app-info-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.app-info-actions .btn{min-width:125px;flex:1}
+.app-info-actions [hidden]{display:none!important}
+.app-info-status{min-height:1.5em;margin:9px 0 0;font-size:10.5px;color:var(--muted);line-height:1.4}
+@media (max-width:350px){.app-info-grid{grid-template-columns:1fr}.app-info-actions{display:block}.app-info-actions .btn{width:100%;margin-bottom:7px}}
 </style>
-<meta name="mm9-build" content="2026.11.08-r530-exchange-calendar"/>
+<meta name="mm9-version" content="5.3.1"/>
+<meta name="mm9-build" content="2026.11.08-r531-app-info"/>
 </head>
 <body>
 <div id="breadthLayer" class="breadth-layer" role="dialog" aria-modal="true" aria-label="Nifty 50 constituent performance" hidden style="display:none" onclick="if(event.target===this)closeBreadthExplorer()">
@@ -611,6 +628,17 @@ main{padding:12px}
 </section>
 
 <section id="more" class="section">
+ <div class="card app-info" id="appInfoCard" aria-labelledby="appInfoHeading">
+  <div class="app-info-title"><div><h3 id="appInfoHeading">App Info</h3><div class="app-info-label">MoneyMantra 9 Market Intelligence</div></div><span class="badge" aria-label="Current loaded release">CURRENT APP</span></div>
+  <div class="app-info-grid">
+   <div class="app-info-stat"><span>App version</span><strong id="mm9AppVersion">5.3.1</strong></div>
+   <div class="app-info-stat"><span>Release date</span><strong id="mm9AppRelease">08 Nov 2026</strong></div>
+  </div>
+  <div class="app-info-release"><span>Release ID</span><b id="mm9ReleaseId">2026.11.08-r531-app-info</b></div>
+  <div class="app-info-actions"><button class="btn soft" type="button" id="mm9CheckVersionBtn" onclick="checkForAppUpdate()">Check for updates</button><button class="btn primary" type="button" id="mm9ReloadVersionBtn" onclick="reloadLatestApp()" hidden>Reload latest version</button></div>
+  <p id="mm9VersionStatus" class="app-info-status" role="status" aria-live="polite">This is the version currently loaded on your device.</p>
+ </div>
+
  <div class="card">
   <h3>Refresh & Alerts</h3>
   <div class="toggle">Current check: 15 seconds after each refresh<div id="autoSwitch" class="switch on" onclick="toggleAuto()"></div></div>
@@ -3077,6 +3105,59 @@ async function posImportFiles(){const f=document.getElementById('posCurrentFile'
   if(p){previousDate=posDateFromName(p.name);if(!previousDate||previousDate>=date)throw Error('The previous NSE report must have an earlier date.');previous=posAdaptRows(posParseCsv(await p.text()));}
   posState={ok:true,date,previousDate,current,previous,sourceLabel:'NSE participant report',sourceUrl:'https://www.nseindia.com/all-reports-derivatives'};posCacheSave(posState);renderPosPeek();posRedraw(true);
  }catch(e){if(msg)msg.textContent=e.message||'Could not read the selected NSE report.';}}
+
+// App Info shows the actual HTML running on this device, not the last source-check time.
+const MM9_RUNNING_VERSION=document.querySelector('meta[name="mm9-version"]')?.content||'Unknown';
+const MM9_RUNNING_RELEASE=document.querySelector('meta[name="mm9-build"]')?.content||'Unknown';
+let mm9UpdateCheckRunning=false;
+let mm9NewVersionAvailable=false;
+function mm9VersionMessage(message){const el=document.getElementById('mm9VersionStatus');if(el)el.textContent=message;}
+function mm9DisplayRunningVersion(){
+ const v=document.getElementById('mm9AppVersion'),r=document.getElementById('mm9ReleaseId');
+ if(v)v.textContent=MM9_RUNNING_VERSION;
+ if(r)r.textContent=MM9_RUNNING_RELEASE;
+}
+async function checkForAppUpdate(){
+ if(mm9UpdateCheckRunning)return;
+ const button=document.getElementById('mm9CheckVersionBtn');
+ const reload=document.getElementById('mm9ReloadVersionBtn');
+ if(location.protocol==='file:'){
+  mm9VersionMessage('Online update checks are available when opening the published website.');
+  return;
+ }
+ mm9UpdateCheckRunning=true;
+ if(button){button.disabled=true;button.textContent='Checking…'}
+ mm9VersionMessage('Checking the published version…');
+ try{
+  const url=new URL('./index.html',document.baseURI);
+  url.searchParams.set('mm9-version-check',String(Date.now()));
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  let response;
+  try{response=await fetch(url.href,{cache:'no-store',headers:{'Accept':'text/html'},signal:controller.signal})}
+  finally{clearTimeout(timer)}
+  if(!response.ok)throw Error('Unavailable');
+  const html=await response.text();
+  const version=html.match(/<meta\s+name=["']mm9-version["']\s+content=["']([^"']+)["']/i)?.[1];
+  const release=html.match(/<meta\s+name=["']mm9-build["']\s+content=["']([^"']+)["']/i)?.[1];
+  if(!version||!release)throw Error('Version information unavailable');
+  if(version===MM9_RUNNING_VERSION && release===MM9_RUNNING_RELEASE){
+   mm9NewVersionAvailable=false;if(reload)reload.hidden=true;
+   mm9VersionMessage('You are using the latest published version ('+version+').');
+  }else{
+   mm9NewVersionAvailable=true;if(reload)reload.hidden=false;
+   mm9VersionMessage('Another version is published ('+version+'). Reload to open it.');
+  }
+ }catch(_){mm9VersionMessage('Could not check the published version. Please check your connection and try again.');}
+ finally{mm9UpdateCheckRunning=false;if(button){button.disabled=false;button.textContent='Check for updates'}}
+}
+function reloadLatestApp(){
+ if(!mm9NewVersionAvailable)return;
+ const url=new URL('./index.html',document.baseURI);
+ url.searchParams.set('mm9-updated',String(Date.now()));
+ location.assign(url.href);
+}
+mm9DisplayRunningVersion();
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
