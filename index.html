@@ -330,7 +330,7 @@ main{padding:12px}
 .position-upload summary{list-style:none}.position-upload summary::-webkit-details-marker{display:none}.position-upload summary:after{content:'⌄';float:right}
 .position-upload[open] summary:after{content:'⌃'}
 </style>
-<meta name="mm9-build" content="2026.11.07-r528-automatic-participants"/>
+<meta name="mm9-build" content="2026.11.08-r530-exchange-calendar"/>
 </head>
 <body>
 <div id="breadthLayer" class="breadth-layer" role="dialog" aria-modal="true" aria-label="Nifty 50 constituent performance" hidden style="display:none" onclick="if(event.target===this)closeBreadthExplorer()">
@@ -368,6 +368,7 @@ main{padding:12px}
  <details class="refreshdetails">
    <summary>Data source details</summary>
    <span id="sourceMode">Checking sources (does not reload the page)</span>
+   <div id="refreshQuoteStatus" style="font-size:11px;color:#596B76;margin-top:5px">Latest Indian quote: —</div>
  </details>
 </div>
 
@@ -713,24 +714,55 @@ function dateIST(){
  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
  const o={};parts.forEach(x=>o[x.type]=x.value);return `${o.year}-${o.month}-${o.day}`
 }
-function marketOpenNow(){
- const t=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(new Date());
- const o={};t.forEach(x=>o[x.type]=x.value);
- const mins=Number(o.hour)*60+Number(o.minute);
- const weekday=o.weekday;
- return !['Sat','Sun'].includes(weekday)&&mins>=555&&mins<=930;
+
+// Session state comes from one shared exchange-calendar service, refreshed roughly once a minute.
+// Timings and holidays below are fallbacks only when that service is unreachable.
+const MM9_NSE_HOLIDAYS_2026=new Set([
+ '2026-01-15','2026-01-26','2026-03-03','2026-03-26','2026-03-31','2026-04-03',
+ '2026-04-14','2026-05-01','2026-05-28','2026-06-26','2026-09-14','2026-10-02',
+ '2026-10-20','2026-11-10','2026-11-24','2026-12-25'
+]);
+const MM9_FALLBACK_SPECIALS={
+ '2026-11-08':{type:'special',name:'Diwali Muhurat Trading',preOpen:'14:05',open:'14:20',close:'15:30'}
+};
+let nseSession=null,nseSessionFetchedAt=0,nseSessionLastAttempt=0,nseSessionInFlight=null;
+function istParts(at=new Date()){
+ const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(at).map(x=>[x.type,x.value]));
+ return {date:`${p.year}-${p.month}-${p.day}`,minute:Number(p.hour)*60+Number(p.minute),weekday:p.weekday};
 }
-function marketStatus(){
- const t=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(new Date());
- const o={};t.forEach(x=>o[x.type]=x.value);
- if(['Sat','Sun'].includes(o.weekday))return 'Closed';
- const mins=Number(o.hour)*60+Number(o.minute);
- if(mins<555)return 'Pre-Open';
- if(mins<=930)return 'Open';
- return 'Closed';
+function mm9SessionMinute(s){const [h,m]=String(s).split(':').map(Number);return h*60+m;}
+function localSessionInfo(at=new Date()){
+ const p=istParts(at),special=MM9_FALLBACK_SPECIALS[p.date];
+ const schedule=special||((p.date.startsWith('2026-')&&MM9_NSE_HOLIDAYS_2026.has(p.date))?{type:'holiday',name:'NSE trading holiday'}:
+  ['Sat','Sun'].includes(p.weekday)?{type:'weekend-closed',name:'Weekend'}:{type:'regular',name:'Regular NSE cash market',preOpen:'09:00',open:'09:15',close:'15:30'});
+ const state=!schedule.open?'Closed':p.minute>=mm9SessionMinute(schedule.open)&&p.minute<mm9SessionMinute(schedule.close)?'Open':schedule.preOpen&&p.minute>=mm9SessionMinute(schedule.preOpen)&&p.minute<mm9SessionMinute(schedule.open)?'Pre-Open':'Closed';
+ return {ok:true,date:p.date,state,openNow:state==='Open',sessionType:schedule.type,sessionName:schedule.name,open:schedule.open||null,close:schedule.close||null,preOpen:schedule.preOpen||null,source:'Published session timetable',verified:!!special||(p.date.startsWith('2026-')&&MM9_NSE_HOLIDAYS_2026.has(p.date))};
 }
-function indianSessionAllowsLiveUpdate(){
- return marketOpenNow();
+function activeNseSession(at=new Date()){
+ const info=istParts(at);if(nseSession?.date===info.date&&Date.now()-nseSessionFetchedAt<110000&&Math.abs(Date.now()-at.getTime())<120000)return nseSession;
+ return localSessionInfo(at);
+}
+function marketOpenNow(at=new Date()){return activeNseSession(at).state==='Open'}
+function marketStatus(at=new Date()){return activeNseSession(at).state}
+function indiaSpecialSession(at=new Date()){const s=activeNseSession(at);return s.sessionType!=='regular'&&s.sessionType!=='holiday'&&s.sessionType!=='weekend-closed'?s:null;}
+function indianSessionAllowsLiveUpdate(){return marketOpenNow()}
+async function refreshNseSession(force=false){
+ if(!API_BASE)return;
+ if(nseSessionInFlight)return nseSessionInFlight;
+ if(!force&&Date.now()-nseSessionLastAttempt<45000)return;
+ nseSessionLastAttempt=Date.now();
+ nseSessionInFlight=(async()=>{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6500);
+  try{
+   const r=await fetch(`${API_BASE}/api/market-session`,{cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}});
+   if(!r.ok)throw Error('Market schedule temporarily unavailable');
+   const j=await r.json();if(j?.ok&&['Open','Closed','Pre-Open'].includes(j.state)&&j.date===dateIST()){
+     nseSession=j;nseSessionFetchedAt=Date.now();
+     if(marketData?.nifty)render();
+   }
+  }catch(_){}finally{clearTimeout(timer)}
+ })().finally(()=>{nseSessionInFlight=null});
+ return nseSessionInFlight;
 }
 function saveIndianSnapshot(){
  const snap={
@@ -986,7 +1018,7 @@ function render(){
  if(es) es.textContent=`Calculated from ${marketData.mode||'available market data'} · ${marketData.timestamp||'timestamp unavailable'}`;
  document.getElementById('dataTime').textContent=(isFinalCloseSnapshot()?'Market close · ':'Data as of · ')+(marketData.timestamp||'timestamp unavailable');
  document.getElementById('heroSource').textContent=isFinalCloseSnapshot()?'FINAL CLOSE':(lastSuccessfulMode==='live'?'PUBLIC WEB REFRESH':freshnessLabel().toUpperCase());
- document.getElementById('marketPill').textContent='● '+marketStatus().toUpperCase();
+ document.getElementById('marketPill').textContent='● '+(marketStatus()==='Open'&&indiaSpecialSession()?'OPEN · SPECIAL':marketStatus().toUpperCase());
  document.getElementById('radGift').textContent='GIFT '+icon(marketData.gift?.pct);
  document.getElementById('radPrice').textContent='PRICE '+icon(marketData.nifty?.pct);
  document.getElementById('radVix').textContent='VIX '+(!Number.isFinite(marketData.vix?.pct)?'◌':marketData.vix.pct>0?'🔴':marketData.vix.pct<0?'🟢':'🟡');
@@ -1447,7 +1479,7 @@ async function fetchProxyMarket(force=false){
     const sinceSuccess=Date.now()-(lastQuoteGroupCheck[group]||0);
     const sinceAttempt=Date.now()-(lastQuoteGroupAttempt[group]||0);
     // Keep the UI 15s check, but avoid wasteful requests for already-closed exchanges.
-    const interval=active?14500:120000;
+    const interval=active?13000:120000;
     if(!force&&previous&&sinceSuccess<interval)return Promise.resolve(previous);
     if(!force&&sinceAttempt<30000&&!previous)return Promise.reject(Error(group+' source retry pending'));
     return fetchFastGroup(group);
@@ -1566,9 +1598,14 @@ function seedFallbackTimeline(){
  if(Array.isArray(saved)&&saved.length)timelinePoints=[...timelinePoints,...saved].filter((p,i,a)=>a.findIndex(x=>x.time===p.time)===i);
 }
 function saveCurrentPoint(){
- const p=marketData.nifty?.pct;if(!Number.isFinite(p))return;
+ const p=marketData.nifty?.pct;if(!Number.isFinite(p)||!marketOpenNow())return;
+ // The checked time is not a quote time. Never insert yesterday's price into today's intraday trend.
+ const sourceEpoch=Number(marketData.asOfEpoch);
+ if(!Number.isFinite(sourceEpoch)||istParts(new Date(sourceEpoch)).date!==dateIST())return;
  const t=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());
- const [h,m]=t.split(':').map(Number),mins=h*60+m;if(mins<555||mins>930)return;
+ const [h,m]=t.split(':').map(Number),mins=h*60+m;
+ const session=activeNseSession();
+ if(!session.open||!session.close||mins<mm9SessionMinute(session.open)||mins>mm9SessionMinute(session.close))return;
  const roundedM=Math.round(m/5)*5;let rh=h,rm=roundedM;if(rm===60){rh++;rm=0}
  const time=`${String(rh).padStart(2,'0')}:${String(rm).padStart(2,'0')}`;
  const saved=JSON.parse(localStorage.getItem('mm9Trend')||'[]').filter(x=>x.time!==time);saved.push({time,pct:p});
@@ -1577,6 +1614,8 @@ function saveCurrentPoint(){
 async function refreshAll(manual=false){
  if(refreshInFlight)return;
  refreshInFlight=true;
+ // The session check is separate from quote publication; do not allow overlapping refreshes.
+ await refreshNseSession(false);
  const btn=document.getElementById('refreshBtn');
  btn.disabled=true;btn.classList.add('loading');
  document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing from available market sources':'Refreshing public sources');
@@ -1699,6 +1738,10 @@ async function refreshAll(manual=false){
    refreshSilver(false);
    refreshGiftNifty(false);
    document.getElementById('lastUpdate').textContent='Checked '+nowIST();
+   const quoteAge=Number(marketData.asOfEpoch);
+   const quoteStamp=Number.isFinite(quoteAge)?new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(quoteAge)):'—';
+   const quoteStatus=document.getElementById('refreshQuoteStatus');
+   if(quoteStatus)quoteStatus.textContent='Latest Indian quote: '+quoteStamp+' IST';
    const prev=JSON.parse(localStorage.getItem('mm9PulsePrev')||'null');
    render();
    const cur=scoreModel();
@@ -2385,7 +2428,13 @@ function openDetail(type,arg){
  }
 
  if(type==='indiaSession'){
-   return showSheet('Indian Cash Market',marketStatus(),`<div class="detailsection"><h4>NSE equity session</h4><div style="font-size:10px;line-height:1.6">Normal equity trading runs from 09:15 to 15:30 IST on trading days. The app checks available sources every 15 seconds while visible. New cash-market quotes appear only when the upstream source publishes them. After 15:30 the latest verified Indian close is retained; GIFT and overseas quotes have separate timestamps.</div></div>`);
+   const session=activeNseSession(),date=escText(session.date||dateIST()),source=escText(session.source||'Trading timetable');
+   const hours=session.open?`${escText(session.open)}–${escText(session.close)} IST`:'No continuous session scheduled';
+   return showSheet('Indian Cash Market',marketStatus(),`<div class="detailsection"><h4>Indian equity trading calendar</h4>
+     <div class="detailgrid">${detailCell('Date',date)}${detailCell('Session',escText(session.sessionName||'Regular equity session'))}${detailCell('Trading hours',hours)}${detailCell('Schedule source',source)}</div>
+     <p class="ss">Exchange holidays, special weekends and shortened trading days can change market hours. The app follows the latest available schedule or exchange status. If a fresh exchange status is unavailable, its published schedule is used.</p>
+     <p class="ss">Market quotes are checked approximately every 15 seconds during active trading while the app is visible. Public providers may still publish delayed or unchanged prices. Read the quote timestamp before acting.</p>
+     <a href="https://www.nseindia.com/resources/exchange-communication-holidays" target="_blank" rel="noopener noreferrer">Official NSE hours and holidays ↗</a></div>`);
  }
  if(type==='global'){
    const g=marketData.global||{};
@@ -3071,6 +3120,7 @@ window.addEventListener('load',()=>{
    ? 'Indian market closed · final close retained'
    : 'Starting live refresh';
  setupAuto();
+ refreshNseSession(true);
  renderWatchPulse();
  refreshNSEDirectory();
  setTimeout(()=>loadWatchPulse(true),1100);setTimeout(()=>refreshNiftyBreadth(false),1600);setTimeout(()=>refreshGiftNifty(true),600);setTimeout(()=>refreshSectorSnapshot(true),800);
@@ -3085,6 +3135,7 @@ document.addEventListener('visibilitychange',()=>{
    return;
  }
  if(autoRefresh){
+   refreshNseSession(true);
    armNextRefresh();
    if(!lastRefreshCompletedAt || Date.now()-lastRefreshCompletedAt>=REFRESH_MS) refreshAll(false);
    else updateCountdown();

@@ -1,0 +1,2479 @@
+
+
+const API_BASE=((window.MM9_CONFIG&&window.MM9_CONFIG.API_BASE)||"https://mm9-market-proxy.pranav-gangurde1.workers.dev").replace(/\/$/,"");
+const IST='Asia/Kolkata';
+let goldQuote=null;
+let goldLastCheckedMs=0;
+let goldFetchInFlight=false;
+let goldView='spot';
+let goldPremium=0;
+let goldDetailOpen=false;
+const FALLBACK_DATE='2026-10-09';
+const fallback={
+  timestamp:'09 Oct 2026 · 15:31 IST',
+  asOfEpoch:Date.parse('2026-10-09T15:31:00+05:30'),
+  mode:'Verified market close snapshot',
+  nifty:{price:22520.45,pct:1.30,source:'Verified closing sources',prev:22231.80,open:22314.95,low:22294.75,high:22580.75},
+  bank:{price:55256.65,pct:1.36,source:'Verified closing source',prev:54515.05,open:54746.25,low:54617.20,high:55256.65},
+  sensex:{price:72472.33,pct:1.23,source:'Verified closing sources',prev:71593.24},
+  vix:{price:14.36,pct:-6.01,source:'Verified closing source',prev:15.28,low:13.66,high:15.28},
+  gift:{price:22605.50,pct:1.08,source:'Verified closing source'},
+  breadth:{adv:32,dec:18,time:'09:33 IST',source:'Economic Times'},
+  sectors:[
+    ['IT',28574.90,3.02],['Pharma',25962.05,0.54],['Auto',24859.90,1.42],['FMCG',44864.25,2.20],
+    ['Metal',12000.75,1.10],['Realty',803.95,0.92],['Energy',35786.50,0.38],['PSU Bank',8126.35,1.63],
+    ['Financial Services',26822.05,1.36],['Infrastructure',8574.45,0.83],['Media',1553.30,1.23],['Banking',55256.65,1.36]
+  ],
+  seedTimeline:[
+    {time:'09:15',pct:0.37},{time:'09:33',pct:0.58},{time:'11:15',pct:1.20},{time:'15:30',pct:1.30}
+  ]
+};
+
+let marketData=JSON.parse(JSON.stringify(fallback));
+let timelinePoints=[];
+let lastSuccessfulMode='fallback';
+const REFRESH_MS=15000;
+let autoRefresh=true;
+let autoTimer=null;
+let countdownTimer=null;
+let nextRefreshAt=null;
+let refreshInFlight=false;
+let lastRefreshCompletedAt=0;
+
+function fmtNum(n){return n==null||n===''||!Number.isFinite(Number(n))?'—':Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}
+function fmtPct(p){if(p==null||Number.isNaN(Number(p)))return '--';const n=Number(p);return `${n>=0?'+':''}${n.toFixed(2)}%`}
+function cls(p){return p>0?'up':p<0?'down':'flat'}
+function icon(p){return p>0?'🟢':p<0?'🔴':'🟡'}
+function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
+function nowIST(){
+ return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())+' IST'
+}
+function dateIST(){
+ const parts=new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+ const o={};parts.forEach(x=>o[x.type]=x.value);return `${o.year}-${o.month}-${o.day}`
+}
+
+// Session state comes from one shared exchange-calendar service, refreshed roughly once a minute.
+// Timings and holidays below are fallbacks only when that service is unreachable.
+const MM9_NSE_HOLIDAYS_2026=new Set([
+ '2026-01-15','2026-01-26','2026-03-03','2026-03-26','2026-03-31','2026-04-03',
+ '2026-04-14','2026-05-01','2026-05-28','2026-06-26','2026-09-14','2026-10-02',
+ '2026-10-20','2026-11-10','2026-11-24','2026-12-25'
+]);
+const MM9_FALLBACK_SPECIALS={
+ '2026-11-08':{type:'special',name:'Diwali Muhurat Trading',preOpen:'14:05',open:'14:20',close:'15:30'}
+};
+let nseSession=null,nseSessionFetchedAt=0,nseSessionInFlight=null;
+function istParts(at=new Date()){
+ const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(at).map(x=>[x.type,x.value]));
+ return {date:`${p.year}-${p.month}-${p.day}`,minute:Number(p.hour)*60+Number(p.minute),weekday:p.weekday};
+}
+function mm9SessionMinute(s){const [h,m]=String(s).split(':').map(Number);return h*60+m;}
+function localSessionInfo(at=new Date()){
+ const p=istParts(at),special=MM9_FALLBACK_SPECIALS[p.date];
+ const schedule=special||((p.date.startsWith('2026-')&&MM9_NSE_HOLIDAYS_2026.has(p.date))?{type:'holiday',name:'NSE trading holiday'}:
+  ['Sat','Sun'].includes(p.weekday)?{type:'weekend-closed',name:'Weekend'}:{type:'regular',name:'Regular NSE cash market',preOpen:'09:00',open:'09:15',close:'15:30'});
+ const state=!schedule.open?'Closed':p.minute>=mm9SessionMinute(schedule.open)&&p.minute<mm9SessionMinute(schedule.close)?'Open':schedule.preOpen&&p.minute>=mm9SessionMinute(schedule.preOpen)&&p.minute<mm9SessionMinute(schedule.open)?'Pre-Open':'Closed';
+ return {ok:true,date:p.date,state,openNow:state==='Open',sessionType:schedule.type,sessionName:schedule.name,open:schedule.open||null,close:schedule.close||null,preOpen:schedule.preOpen||null,source:'Published session timetable',verified:p.date.startsWith('2026-')};
+}
+function activeNseSession(at=new Date()){
+ const info=istParts(at);if(nseSession?.date===info.date&&Date.now()-nseSessionFetchedAt<110000&&Math.abs(Date.now()-at.getTime())<120000)return nseSession;
+ return localSessionInfo(at);
+}
+function marketOpenNow(at=new Date()){return activeNseSession(at).state==='Open'}
+function marketStatus(at=new Date()){return activeNseSession(at).state}
+function indiaSpecialSession(at=new Date()){const s=activeNseSession(at);return s.sessionType!=='regular'&&s.sessionType!=='holiday'&&s.sessionType!=='weekend-closed'?s:null;}
+function indianSessionAllowsLiveUpdate(){return marketOpenNow()}
+async function refreshNseSession(force=false){
+ if(!API_BASE)return;
+ if(nseSessionInFlight)return nseSessionInFlight;
+ if(!force&&Date.now()-nseSessionFetchedAt<45000)return;
+ nseSessionInFlight=(async()=>{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6500);
+  try{
+   const r=await fetch(`${API_BASE}/api/market-session`,{cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}});
+   if(!r.ok)throw Error('Market schedule temporarily unavailable');
+   const j=await r.json();if(j?.ok&&['Open','Closed','Pre-Open'].includes(j.state)&&j.date===dateIST()){
+     nseSession=j;nseSessionFetchedAt=Date.now();
+     if(marketData?.nifty)render();
+   }
+  }catch(_){}finally{clearTimeout(timer)}
+ })().finally(()=>{nseSessionInFlight=null});
+ return nseSessionInFlight;
+}
+function saveIndianSnapshot(){
+ const snap={
+   date:dateIST(),
+   timestamp:marketData.timestamp,
+   asOfEpoch:marketData.asOfEpoch,
+   mode:marketData.mode,
+   nifty:marketData.nifty,
+   bank:marketData.bank,
+   sensex:marketData.sensex,
+   vix:marketData.vix,
+   timeline:timelinePoints
+ };
+ localStorage.setItem('mm9IndianLastSnapshot',JSON.stringify(snap));
+}
+function restoreIndianSnapshot(){
+ try{
+   const snap=JSON.parse(localStorage.getItem('mm9IndianLastSnapshot')||'null');
+   if(!snap||snap.date!==dateIST())return false;
+   ['nifty','bank','sensex','vix'].forEach(k=>{if(snap[k])marketData[k]=snap[k]});
+   if(snap.timestamp)marketData.timestamp=snap.timestamp;
+   if(snap.asOfEpoch)marketData.asOfEpoch=snap.asOfEpoch;
+   if(snap.mode)marketData.mode=snap.mode;
+   if(Array.isArray(snap.timeline)&&snap.timeline.length)timelinePoints=snap.timeline;
+   return true;
+ }catch(e){return false}
+}
+
+function partsInZone(zone){
+ const t=new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(new Date());
+ const o={};t.forEach(x=>o[x.type]=x.value);return {weekday:o.weekday,mins:Number(o.hour)*60+Number(o.minute)};
+}
+function usSessionStatus(){
+ const x=partsInZone('America/New_York');
+ if(['Sat','Sun'].includes(x.weekday))return 'Closed';
+ if(x.mins>=240&&x.mins<570)return 'Pre-Market';
+ if(x.mins>=570&&x.mins<960)return 'Regular';
+ if(x.mins>=960&&x.mins<1200)return 'After-Hours';
+ return 'Closed';
+}
+
+function sgxSessionStatus(){
+ const {weekday,mins}=partsInZone('Asia/Singapore');
+ if(['Sat','Sun'].includes(weekday))return 'Closed · weekend';
+ if(mins<510)return 'Before pre-open';
+ if(mins<540)return 'Opening routine';
+ if(mins<720)return 'Open · morning';
+ if(mins<780)return 'Lunch break';
+ if(mins<1020)return 'Open · afternoon';
+ if(mins<1036)return 'Close auction';
+ return 'Closed · session';
+}
+function metalSessionLabel(quote){
+ if(!quote?.priceAsOf || quote.kind!=='india-daily-benchmark')return 'India quote unavailable';
+ return `Daily India fix · ${quote.publishedDate||'date unavailable'}`;
+}
+
+function giftSessionStatus(){
+ const x=partsInZone(IST);
+ const d=x.weekday, m=x.mins;
+ // Session 2 continues past midnight into the next calendar day.
+ // Mon-Fri 16:05-23:59 and Tue-Sat 00:00-02:45.
+ const overnightAllowed=['Tue','Wed','Thu','Fri','Sat'].includes(d);
+ const daytimeAllowed=['Mon','Tue','Wed','Thu','Fri'].includes(d);
+ if(overnightAllowed && m<=165) return 'Session 2 · until 02:45';
+ if(!daytimeAllowed) return 'Closed';
+ if(m>=375 && m<385) return 'Pre-Open · Session 1';       // 06:15-06:25
+ if(m>=390 && m<940) return 'Session 1 · until 15:40';    // 06:30-15:40
+ if(m>=940 && m<955) return 'Pre-Close · Session 1';      // 15:40-15:55
+ if(m>=958 && m<963) return 'Pre-Open · Session 2';       // 15:58-16:03
+ if(m>=965) return 'Session 2 · until 02:45';             // 16:05 onward
+ return 'Inter-session';
+}
+function dataAgeMinutes(){
+ const ep=Number(marketData.asOfEpoch);
+ if(!Number.isFinite(ep))return null;
+ return Math.max(0,Math.round((Date.now()-ep)/60000));
+}
+function isFinalCloseSnapshot(){
+ if(!marketData||!marketData.mode)return false;
+ if(!marketData.mode.toLowerCase().includes('market close snapshot'))return false;
+ const ep=Number(marketData.asOfEpoch);
+ if(!Number.isFinite(ep))return false;
+ const snapDate=new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ep));
+ return snapDate===dateIST() && marketStatus()==='Closed';
+}
+
+function freshnessLabel(){
+ if(isFinalCloseSnapshot())return 'Final market close';
+ const a=dataAgeMinutes();
+ if(a==null)return 'Timestamp unavailable';
+ if(a<=5)return 'Current';
+ if(a<=15)return `Verified · ${a} min ago`;
+ if(a<60)return `Last verified · ${a} min ago`;
+ const h=Math.floor(a/60),m=a%60;
+ return `Last verified · ${h}h ${m}m ago`;
+}
+
+function scoreModel(){
+ const comps=[];
+ [['nifty',.35],['bank',.25],['sensex',.15],['gift',.10]].forEach(([k,w])=>{
+   const p=marketData[k]?.pct;
+   if(Number.isFinite(p)) comps.push({signal:clamp(p/1.5,-1,1),w});
+ });
+ // Keep all 12 benchmarks visible, but use a narrower non-thematic basket
+ // for the Sector component of Market Pulse. Otherwise Infrastructure/Energy
+ // and Banking/Financial Services/PSU Bank repeat some constituent exposure.
+ const sentimentCore=['IT','Auto','Pharma','FMCG','Metal','Realty','Media','Banking'];
+ const coreSet=new Set(sentimentCore);
+ const coreQuotes=(marketData.sectors||[]).filter(row=>coreSet.has(row[0])&&row[2]!=null&&Number.isFinite(Number(row[2])));
+ if(coreQuotes.length){
+   const pos=coreQuotes.filter(x=>Number(x[2])>0).length;
+   const neg=coreQuotes.filter(x=>Number(x[2])<0).length;
+   comps.push({signal:(pos-neg)/coreQuotes.length,w:.15});
+ }
+ const wsum=comps.reduce((a,c)=>a+c.w,0)||1;
+ const raw=comps.reduce((a,c)=>a+c.signal*c.w,0)/wsum;
+ const score=Math.round(raw*100);
+ const main=[marketData.nifty?.pct,marketData.bank?.pct,marketData.sensex?.pct].filter(Number.isFinite);
+ const pos=main.filter(x=>x>0).length, neg=main.filter(x=>x<0).length;
+ const aligned=Math.max(pos,neg);
+ const coverage=comps.length;
+ let confidence=clamp(50+aligned*9+coverage*3+(lastSuccessfulMode==='live'?8:0),45,94);
+ const age=dataAgeMinutes();
+ if(age!=null && !isFinalCloseSnapshot()){
+   if(age>120) confidence=Math.min(confidence,35);
+   else if(age>60) confidence=Math.min(confidence,45);
+   else if(age>30) confidence=Math.min(confidence,55);
+   else if(age>15) confidence=Math.min(confidence,65);
+ }
+ let state='NEUTRAL';
+ if(score>=65)state='STRONG BULLISH'; else if(score>=35)state='BULLISH'; else if(score>=15)state='MILD BULLISH';
+ else if(score<=-65)state='STRONG BEARISH'; else if(score<=-35)state='BEARISH'; else if(score<=-15)state='MILD BEARISH';
+ const v=marketData.vix?.price;
+ let vol='UNKNOWN';
+ if(Number.isFinite(v)){vol=v<12?'CALM':v<15?'NORMAL':v<20?'ELEVATED':v<30?'HIGH':'EXTREME'}
+ return {score,confidence,state,vol};
+}
+function setValue(id,price,pct){
+ const v=document.getElementById(id+'Val'), p=document.getElementById(id+'Pct');
+ if(v){v.textContent=fmtNum(price);v.className='v '+cls(pct)}
+ if(p){p.textContent=fmtPct(pct);p.className='s '+cls(pct)}
+}
+function trendStats(){
+ const pts=(timelinePoints||[]).filter(p=>Number.isFinite(Number(p.pct))).slice().sort((a,b)=>a.time.localeCompare(b.time));
+ if(!pts.length)return null;
+ const vals=pts.map(p=>Number(p.pct));
+ const hi=Math.max(...vals),lo=Math.min(...vals),first=vals[0],last=vals[vals.length-1];
+ return {first,last,hi,lo,points:pts.length,start:pts[0].time,end:pts[pts.length-1].time};
+}
+function sectorStats(){
+ const s=(marketData.sectors||[]).filter(x=>Number.isFinite(Number(x[2])));
+ if(!s.length)return null;
+ const sorted=s.slice().sort((a,b)=>Number(b[2])-Number(a[2]));
+ return {
+   total:s.length,
+   positive:s.filter(x=>Number(x[2])>0).length,
+   negative:s.filter(x=>Number(x[2])<0).length,
+   top:sorted.slice(0,3),
+   weak:sorted.slice(-2).reverse()
+ };
+}
+function globalStats(){
+ const g=marketData.global||{};
+ const rows=[
+   ['Nasdaq',g.nasdaq?.pct],['S&P 500',g.sp?.pct],['Nikkei',g.nikkei?.pct]
+ ].filter(x=>Number.isFinite(Number(x[1])));
+ if(!rows.length)return null;
+ return {rows,avg:rows.reduce((a,x)=>a+Number(x[1]),0)/rows.length};
+}
+function explanation(model){
+ const parts=[];
+ const n=marketData.nifty||{},b=marketData.bank||{},s=marketData.sensex||{},v=marketData.vix||{};
+ if(Number.isFinite(n.pct)){
+   parts.push(`Nifty 50 is ${n.pct>=0?'higher':'lower'} by ${Math.abs(n.pct).toFixed(2)}% at ${fmtNum(n.price)}.`);
+ }
+ if(Number.isFinite(b.pct)&&Number.isFinite(n.pct)){
+   const same=Math.sign(b.pct)===Math.sign(n.pct);
+   const rel=Math.abs(b.pct)-Math.abs(n.pct);
+   parts.push(same
+     ? `Bank Nifty is moving in the same direction at ${fmtPct(b.pct)}${Math.abs(rel)>=0.25?`, ${rel>0?'outperforming':'lagging'} Nifty`:''}, which ${same?'supports':'does not support'} the index move.`
+     : `Bank Nifty is diverging at ${fmtPct(b.pct)}, so financials are not confirming the Nifty move.`);
+ }
+ if(Number.isFinite(s.pct)&&Number.isFinite(n.pct)){
+   parts.push(Math.sign(s.pct)===Math.sign(n.pct)
+     ? `Sensex is aligned at ${fmtPct(s.pct)}, adding a second large-cap confirmation.`
+     : `Sensex is diverging at ${fmtPct(s.pct)}, so large-cap confirmation is mixed.`);
+ }
+ if(Number.isFinite(v.price)){
+   if(Number.isFinite(v.pct)){
+     parts.push(`India VIX is ${fmtNum(v.price)} (${fmtPct(v.pct)}); volatility expectations are ${v.pct<0?'easing':'rising'} versus the previous session.`);
+   }else parts.push(`India VIX is ${fmtNum(v.price)}, classified as ${model.vol.toLowerCase()} volatility by the dashboard.`);
+ }
+ const ts=trendStats();
+ if(ts&&ts.points>=2){
+   const delta=ts.last-ts.first;
+   parts.push(`Intraday data contains ${ts.points} points from ${ts.start} to ${ts.end}; the session moved from ${fmtPct(ts.first)} to ${fmtPct(ts.last)}, with an intraday range of ${fmtPct(ts.lo)} to ${fmtPct(ts.hi)} versus the previous close.`);
+   if(Math.abs(delta)>=0.25) parts.push(delta>0?'Momentum strengthened through the session.':'The market gave back part of its earlier move through the session.');
+ }
+ const ss=sectorStats();
+ if(ss){
+   const leaders=ss.top.filter(x=>x[2]>0).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', ');
+   const laggards=ss.weak.filter(x=>x[2]<0).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', ');
+   parts.push(`${ss.positive} of ${ss.total} live sector indices are positive${leaders?`; leaders include ${leaders}`:''}${laggards?`; weaker sectors include ${laggards}`:''}.`);
+ }
+ const gs=globalStats();
+ if(gs){
+   const sign=gs.avg>0.15?'positive':gs.avg<-0.15?'negative':'mixed/flat';
+   parts.push(`Available global cues are ${sign}: ${gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', ')}.`);
+ }
+ parts.push(`Composite Market Pulse: ${model.state} ${model.score>0?'+':''}${model.score}, confidence ${model.confidence}%.`);
+ return parts.join(' ');
+}
+function render(){
+ const m=scoreModel();
+ document.getElementById('pulseScore').textContent=Number.isFinite(marketData.nifty?.pct)?(m.score>0?'+':'')+m.score:'—';
+ document.getElementById('pulseState').textContent=Number.isFinite(marketData.nifty?.pct)?m.state:'DATA UNAVAILABLE';
+ document.getElementById('confidence').textContent=Number.isFinite(marketData.nifty?.pct)?m.confidence+'%':'—';
+ document.getElementById('volatility').textContent=m.vol;
+ document.getElementById('marketState').textContent=marketStatus()==='Closed'?'Closed · snapshot retained':marketStatus();
+ const age=dataAgeMinutes();
+ const stale=document.getElementById('staleNote');
+ if(isFinalCloseSnapshot()){
+   stale.style.display='block';
+   stale.innerHTML=`<b>Market close snapshot:</b> Indian cash-market values are final for today. Nifty 50, Bank Nifty, Sensex and India VIX will remain at their closing values until the next trading session. GIFT Nifty and global markets may continue to change separately.`;
+ }else if(age!=null&&age>15){
+   stale.style.display='block';
+   stale.innerHTML=`<b>Data update notice:</b> the latest verified market reading is from ${marketData.timestamp}. The app checked again recently, but a newer public-source update was unavailable. Confidence is automatically reduced until fresher data is received.`;
+ }else stale.style.display='none';
+ document.getElementById('indiaSession').textContent=marketStatus();
+ document.getElementById('giftSession').textContent=giftSessionStatus();
+ document.getElementById('usSession').textContent=usSessionStatus();
+ document.getElementById('sgxSession').textContent=sgxSessionStatus();
+ updateMetalsSession();
+ renderSGX();
+ document.getElementById('radScore').textContent=Number.isFinite(marketData.nifty?.pct)?(m.score>0?'+':'')+m.score:'—';
+ document.getElementById('radLabel').textContent=Number.isFinite(marketData.nifty?.pct)?m.state+' · '+m.confidence+'%':'DATA UNAVAILABLE';
+ const deg=clamp(50+m.score*.5,4,96);
+ document.getElementById('gauge').style.background=`conic-gradient(#4CC58F 0 ${deg}%,rgba(255,255,255,.13) ${deg}% 100%)`;
+ setValue('nifty',marketData.nifty?.price,marketData.nifty?.pct);
+ setValue('bank',marketData.bank?.price,marketData.bank?.pct);
+ setValue('sensex',marketData.sensex?.price,marketData.sensex?.pct);
+ setValue('vix',marketData.vix?.price,marketData.vix?.pct);
+ setValue('gift',marketData.gift?.price,marketData.gift?.pct);
+ const giftLabel=marketData.gift?.asOf
+   ? `GIFT quote ${marketData.gift.asOf}${marketData.gift.isCached?' · last saved':''}`
+   : `Verified GIFT price unavailable${giftFetchError?': '+giftFetchError:''}`;
+ const giftStamp=document.getElementById('giftAsOf');if(giftStamp)giftStamp.textContent=giftLabel;
+ const giftCaption=document.getElementById('giftSourceCaption');if(giftCaption)giftCaption.textContent=giftLabel;
+
+ document.getElementById('marketExplain').textContent=Number.isFinite(marketData.nifty?.pct)?explanation(m):'Market explanation becomes available after the first successful index refresh.';
+ const es=document.getElementById('explainSource');
+ if(es) es.textContent=`Calculated from ${marketData.mode||'available market data'} · ${marketData.timestamp||'timestamp unavailable'}`;
+ document.getElementById('dataTime').textContent=(isFinalCloseSnapshot()?'Market close · ':'Data as of · ')+(marketData.timestamp||'timestamp unavailable');
+ document.getElementById('heroSource').textContent=isFinalCloseSnapshot()?'FINAL CLOSE':(lastSuccessfulMode==='live'?'PUBLIC WEB REFRESH':freshnessLabel().toUpperCase());
+ document.getElementById('marketPill').textContent='● '+(marketStatus()==='Open'&&indiaSpecialSession()?'OPEN · SPECIAL':marketStatus().toUpperCase());
+ document.getElementById('radGift').textContent='GIFT '+icon(marketData.gift?.pct);
+ document.getElementById('radPrice').textContent='PRICE '+icon(marketData.nifty?.pct);
+ document.getElementById('radVix').textContent='VIX '+(!Number.isFinite(marketData.vix?.pct)?'◌':marketData.vix.pct>0?'🔴':marketData.vix.pct<0?'🟢':'🟡');
+ document.getElementById('radBank').textContent='BANK '+icon(marketData.bank?.pct);
+ const sectorPos=marketData.sectors?.filter(x=>x[2]>0).length||0;
+ document.getElementById('radBreadth').textContent='SECTORS '+(!marketData.sectors?.length?'◌':sectorPos/marketData.sectors.length>=.67?'🟢':sectorPos/marketData.sectors.length>=.40?'🟡':'🔴');
+ document.getElementById('radGlobal').textContent='GLOBAL '+(marketData.globalAligned===true?'🟢':marketData.globalAligned===false?'🔴':'◌');
+ document.getElementById('giftMarket').textContent=fmtPct(marketData.gift?.pct);
+ document.getElementById('giftDot').className='dot '+(marketData.gift?.pct>0?'g':marketData.gift?.pct<0?'r':'a');
+ document.getElementById('advVal').textContent=marketData.breadth?.adv??'—';
+ document.getElementById('decVal').textContent=marketData.breadth?.dec??'—';
+ document.getElementById('breadthStamp').textContent=marketData.breadth?`${marketData.breadth.cached?'Last saved · ':''}${marketData.breadth.source} · ${marketData.breadth.time}`:'Breadth source unavailable';
+ const note=document.getElementById('marketFeedNotice');
+ if(note){
+   const prices=['nifty','bank','sensex'].filter(k=>Number.isFinite(marketData[k]?.price)).length;
+   const available=(marketData.sectors||[]).filter(x=>x[2]!=null&&Number.isFinite(Number(x[2]))).length;
+   const globals=marketData.global?Object.values(marketData.global).filter(x=>Number.isFinite(x?.price)).length:0;
+   note.textContent=prices||available||globals
+     ? `Data check: ${prices} Indian index quotes, ${available} sector quotes, ${globals} global quotes available. Missing fields mean the upstream source did not provide a verified value.`
+     : 'Live quotes are not connected. Your sector directory and its educational drill-downs remain available. Use the GitHub Pages HTTPS app and check your internet connection.';
+   note.style.display=prices&&available&&globals?'none':'block';
+ }
+
+ renderSectors();
+ renderTimeline();
+ renderInvestorInsights();
+}
+function renderInvestorInsights(){
+ const m=scoreModel(), vol=m.vol;
+ const sip=document.getElementById('sipInsight'), lump=document.getElementById('lumpInsight'), ret=document.getElementById('retireInsight');
+ if(!sip||!lump||!ret)return;
+ if(vol==='HIGH'||vol==='EXTREME'){
+   sip.textContent='Volatility is high. For a long-horizon SIP, consistency generally matters more than trying to time one volatile session; review asset allocation rather than stopping solely because of today’s move.';
+   lump.textContent='With elevated volatility, a large lump sum has higher timing risk. A phased allocation can reduce entry-point dependence, subject to your goal, horizon and suitability.';
+   ret.textContent='High volatility increases sequence-of-return risk. Prioritize near-term liquidity, planned withdrawals and an appropriate debt/equity mix before reacting to the market direction.';
+ }else if(m.score>=35){
+   sip.textContent='The market structure is positive. A disciplined SIP can continue according to the financial goal; avoid increasing risk merely because the market is strong today.';
+   lump.textContent='A positive market can tempt investors to chase momentum. For a large allocation, check valuation, horizon and asset mix; phasing remains an option where timing risk matters.';
+   ret.textContent='A positive session does not remove retirement risk. Keep withdrawal liquidity and rebalancing rules ahead of short-term market optimism.';
+ }else if(m.score<=-35){
+   sip.textContent='The market structure is weak. For a long-term SIP, a down session alone is generally not a reason to stop; confirm that the goal, horizon and risk capacity remain unchanged.';
+   lump.textContent='Weak markets may offer lower entry levels, but direction alone is not a valuation signal. Consider phased deployment and diversification rather than an all-at-once reaction.';
+   ret.textContent='During a weak market, avoid funding near-term withdrawals by forced equity selling where possible; liquidity planning and asset allocation become especially important.';
+ }else{
+   sip.textContent='The market is mixed/neutral. Continue to judge a SIP by the goal and time horizon rather than waiting for a perfect short-term signal.';
+   lump.textContent='With mixed signals, phasing a large investment can reduce timing dependence while you maintain the intended strategic asset allocation.';
+   ret.textContent='Mixed markets reinforce the importance of cash-flow planning, liquidity and rebalancing instead of short-term index forecasts.';
+ }
+}
+const SECTOR_DIRECTORY=["IT", "Auto", "Pharma", "FMCG", "Metal", "Realty", "Energy", "PSU Bank", "Financial Services", "Infrastructure", "Media", "Banking"];
+const LEGACY_SECTOR_EXTRA=["Energy","Infrastructure"];
+function watchSectorConstituent(symbol, name){
+  const raw=String(symbol||'').trim().toUpperCase();
+  if(!/^[A-Z0-9&-]{1,20}$/.test(raw))return;
+  // The official constituent file is an NSE equity directory; use its NSE market ticker.
+  const target=raw+'.NS';
+  closeDetail();
+  const homeTab=document.querySelector('.tab[data-tab="home"]');
+  if(homeTab)homeTab.click();
+  setWatchSymbol(target);
+  const status=document.getElementById('watchStatus');
+  if(status)status.textContent=`Watching ${name||raw} · ${target} · selected from the NSE sector constituent list`;
+  const search=document.getElementById('watchSearch');
+  if(search)requestAnimationFrame(()=>search.scrollIntoView({block:'center',behavior:'smooth'}));
+}
+function filterSectorRows(){
+ const q=(document.getElementById('sectorFilter')?.value||'').trim().toLowerCase();
+ document.querySelectorAll('#sectorList .sector').forEach(el=>{el.style.display=(el.dataset.sector||'').includes(q)?'':'none'});
+}
+
+const BREADTH_STORAGE_KEY='mm9_verified_breadth_r4';
+let nifty50CompanyRows=null, nifty50CompanyAt=0, nifty50CompanySource='', nifty50CompanyTime='';
+let breadthView='adv', breadthShortlist=new Set(), breadthWatchlist=[];
+const BREADTH_WATCH_STORAGE='mm9_nifty50_selected_watch_v1';
+async function loadBreadthBatches(){
+  const parts=await Promise.all([0,1].map(async part=>{
+    const c=new AbortController(),tm=setTimeout(()=>c.abort(),24000);
+    try{const r=await fetch(`${API_BASE}/api/breadth-batch?part=${part}`,{signal:c.signal,cache:'no-store'});const j=await r.json();if(!r.ok||!j.ok)throw Error(j.error||'Batch unavailable');return j}
+    finally{clearTimeout(tm)}
+  }));
+  if(parts[0].part!==0||parts[1].part!==1)throw Error('Missing validated batch');
+  if(parts[0].snapshotDate!==parts[1].snapshotDate)throw Error('Constituent quote dates do not match');
+  const rows=parts.flatMap(p=>p.items||[]);
+  const unique=new Set(rows.map(x=>x.symbol));
+  if(rows.length!==50||unique.size!==50||rows.some(x=>!Number.isFinite(x.pct)))throw Error(`${unique.size} of 50 valid constituent quotes (need all 50)`);
+  return {ok:true,adv:rows.filter(x=>x.pct>0).length,dec:rows.filter(x=>x.pct<0).length,unchanged:rows.filter(x=>x.pct===0).length,
+    asOf:parts[0].snapshotDate+' · last source quote',coverage:50,source:'Calculated from 50 exchange-listed constituent quotes · Yahoo public delayed charts',method:'calculated-stock-breadth',items:rows};
+}
+
+let lastBreadthFetchMs=0;
+async function refreshNiftyBreadth(force=false){
+ if(!API_BASE||(!force&&Date.now()-lastBreadthFetchMs<30*60000))return;
+ if(!force&&nifty50CompanyRows&&Date.now()-nifty50CompanyAt<60000)return; // Retain a newer full-constituent snapshot.
+ lastBreadthFetchMs=Date.now();
+ const caption=document.getElementById('breadthStamp');
+ if(caption)caption.textContent='Checking official NSE constituent breadth…';
+ let result=null,errs=[];
+ try{
+  const r=await fetch(`${API_BASE}/api/breadth`,{cache:'no-store'}),j=await r.json();
+  if(!r.ok||!j.ok||!Number.isInteger(j.adv)||!Number.isInteger(j.dec))throw Error(j.error||'Official feed unavailable');
+  result=j;
+ }catch(e){errs.push(String(e?.message||e))}
+ if(!result){
+  if(caption)caption.textContent='Official NSE data unavailable; checking all 50 constituent quotes (delayed)…';
+  try{result=await loadBreadthBatches()}catch(e){errs.push(String(e?.message||e))}
+ }
+ if(result){
+   if(Array.isArray(result.items)&&result.items.length===50)storeNifty50Rows(result.items,result.source,result.asOf);
+   marketData.breadth={adv:result.adv,dec:result.dec,unchanged:result.unchanged,source:result.source||'Verified index breadth',time:result.asOf||'Timestamp not supplied',coverage:result.coverage||50,method:result.method||'official'};
+   try{localStorage.setItem(BREADTH_STORAGE_KEY,JSON.stringify({...marketData.breadth,savedAt:Date.now()}))}catch(_){}
+ }else{
+   let saved=null;
+   try{saved=JSON.parse(localStorage.getItem(BREADTH_STORAGE_KEY)||'null')}catch(_){}
+   // A previously verified breadth reading may be shown, explicitly dated. Never invent 32/18.
+   if(saved?.savedAt&&Date.now()-saved.savedAt<3*86400000&&saved.adv+saved.dec+(saved.unchanged||0)===50){
+      marketData.breadth={...saved,cached:true};
+   }else marketData.breadth=null;
+ }
+ const adv=document.getElementById('advVal'),dec=document.getElementById('decVal');
+ if(adv)adv.textContent=marketData.breadth?.adv??'—';if(dec)dec.textContent=marketData.breadth?.dec??'—';
+ if(caption)caption.textContent=marketData.breadth?`${marketData.breadth.cached?'Last saved · ':''}${marketData.breadth.source} · ${marketData.breadth.time} · 50/50`:
+    'Constituent data is temporarily unavailable.';
+}
+
+function storeNifty50Rows(rows, source, asOf){
+ const clean=(rows||[]).map(x=>({symbol:String(x.symbol||'').trim().toUpperCase(),name:String(x.name||'').trim(),pct:Number(x.pct),price:x.price==null?null:Number(x.price),change:x.change==null?null:Number(x.change),quoteDate:String(x.quoteDate||'')}));
+ if(clean.length!==50 || new Set(clean.map(x=>x.symbol)).size!==50 || clean.some(x=>!/^[A-Z0-9&-]{1,22}$/.test(x.symbol)||!Number.isFinite(x.pct)))return false;
+ const sameDate=quoteTradingDate(asOf)&&quoteTradingDate(asOf)===quoteTradingDate(nifty50CompanyTime);
+ const previous=sameDate&&nifty50CompanyRows?new Map(nifty50CompanyRows.map(x=>[x.symbol,x])):new Map();
+ clean.forEach(x=>{const old=previous.get(x.symbol);if(!old)return;
+   if(!x.name&&old.name)x.name=old.name;
+   if(x.price===null&&Number.isFinite(old.price))x.price=old.price;
+   if(x.change===null&&Number.isFinite(old.change))x.change=old.change;
+ });
+ // Keep official company names and percentage changes when a price-only source refreshes later.
+ if(sameDate&&nifty50CompanyRows&&nifty50CompanySource.includes('NSE official')&&!String(source||'').includes('NSE official')){
+   const px=new Map(clean.map(x=>[x.symbol,x]));nifty50CompanyRows.forEach(x=>{const other=px.get(x.symbol);if(!other)return;
+      if(x.price===null&&Number.isFinite(other.price))x.price=other.price;
+      if(x.change===null&&Number.isFinite(other.change))x.change=other.change;
+   });nifty50CompanyAt=Date.now();return true;
+ }
+ nifty50CompanyRows=clean;nifty50CompanySource=String(source||'Public market quote');nifty50CompanyTime=String(asOf||'Quote time unavailable');nifty50CompanyAt=Date.now();
+ return true;
+}
+function breadthFilteredRows(){
+ let rows=(nifty50CompanyRows||[]).filter(x=>breadthView==='all'||(breadthView==='adv'?x.pct>0:breadthView==='dec'?x.pct<0:x.pct===0));
+ const q=(document.getElementById('breadthSearch')?.value||'').trim().toLowerCase();if(q)rows=rows.filter(x=>x.symbol.toLowerCase().includes(q)||x.name.toLowerCase().includes(q));
+ const sort=document.getElementById('breadthOrder')?.value||'top';
+ return rows.sort((a,b)=>sort==='low'?a.pct-b.pct:sort==='name'?(a.name||a.symbol).localeCompare(b.name||b.symbol):sort==='price'?(b.price??-1)-(a.price??-1):b.pct-a.pct);
+}
+function breadthCount(type){if(!nifty50CompanyRows)return null;return nifty50CompanyRows.filter(x=>type==='adv'?x.pct>0:type==='dec'?x.pct<0:type==='flat'?x.pct===0:true).length}
+function setBreadthMode(mode){if(!['adv','dec','flat','all'].includes(mode))return;breadthView=mode;renderBreadthExplorer()}
+function openBreadthExplorer(mode='adv'){
+ breadthView=mode;const layer=document.getElementById('breadthLayer');layer.hidden=false;layer.style.display='flex';document.body.style.overflow='hidden';
+ document.getElementById('breadthSearch').value='';document.getElementById('breadthOrder').value=mode==='dec'?'low':'top';
+ renderBreadthExplorer();
+ if(!nifty50CompanyRows||!nifty50CompanySource.includes('NSE official')||Date.now()-nifty50CompanyAt>60000)loadNifty50Companies();
+}
+function closeBreadthExplorer(){const layer=document.getElementById('breadthLayer');layer.style.display='none';layer.hidden=true;document.body.style.overflow=''}
+function renderBreadthExplorer(){
+ const box=document.getElementById('breadthResults');if(!box)return;
+ const source=document.getElementById('breadthExplorerSource');
+ document.querySelectorAll('#breadthModes [data-bmode]').forEach(btn=>{
+  const n=breadthCount(btn.dataset.bmode);btn.classList.toggle('active',btn.dataset.bmode===breadthView);
+  btn.textContent=({adv:'Advances',dec:'Declines',all:'All',flat:'Unchanged'})[btn.dataset.bmode]+(n===null?'':` · ${n}`)
+ });
+ document.getElementById('breadthSelectionCount').textContent=`${breadthShortlist.size} selected`;
+ document.getElementById('watchBreadthSelected').disabled=breadthShortlist.size===0;
+ box.replaceChildren();
+ if(!nifty50CompanyRows){source.textContent='Source check pending. Counts may be available even when the individual stock list is not.';box.textContent='Loading the current Nifty 50 constituent snapshot…';return;}
+ source.textContent=`${nifty50CompanyTime} · ${nifty50CompanySource}${Date.now()-nifty50CompanyAt>15*60000?' · last saved snapshot':''} · 50/50 companies`;
+ const rows=breadthFilteredRows();if(!rows.length){box.textContent='No companies match this filter.';return;}
+ const fragment=document.createDocumentFragment();
+ rows.forEach(x=>{
+  const row=document.createElement('div');row.className='breadth-row';
+  const tick=document.createElement('input');tick.type='checkbox';tick.checked=breadthShortlist.has(x.symbol);tick.setAttribute('aria-label',`Select ${x.name||x.symbol}`);
+  tick.addEventListener('change',()=>{if(tick.checked)breadthShortlist.add(x.symbol);else breadthShortlist.delete(x.symbol);document.getElementById('breadthSelectionCount').textContent=`${breadthShortlist.size} selected`;document.getElementById('watchBreadthSelected').disabled=breadthShortlist.size===0});
+  const button=document.createElement('button');button.className='breadth-stock-link';button.type='button';button.title='Open Home and watch '+(x.name||x.symbol);
+  const ticker=document.createElement('b');ticker.textContent=x.symbol;const name=document.createElement('small');name.textContent=(x.name||'NSE-listed stock')+' · Tap to watch';button.append(ticker,name);button.addEventListener('click',()=>watchBreadthCompany(x.symbol));
+  const metric=document.createElement('div');metric.className='breadth-figures';const pct=document.createElement('strong');pct.className=x.pct>0?'up':x.pct<0?'down':'flat';pct.textContent=fmtPct(x.pct);
+  const price=document.createElement('small');price.className='stock-price';price.textContent=x.price!==null&&Number.isFinite(x.price)&&x.price>0?'₹'+fmtNum(x.price):'—';metric.append(pct,price);
+  row.append(tick,button,metric);fragment.appendChild(row)
+ });box.appendChild(fragment);
+ const foot=document.createElement('div');foot.className='ss';foot.style.padding='10px 3px';foot.textContent='Sorted by daily change vs the previous close. Biggest gainer does not automatically mean the best investment. Verify quote timestamps before acting.';box.appendChild(foot);
+}
+function quoteTradingDate(value){
+ const s=String(value||'');
+ const iso=s.match(/\b(\d{4}-\d{2}-\d{2})\b/);if(iso)return iso[1];
+ const dmy=s.match(/\b(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{4})\b/);
+ if(!dmy)return null;
+ const months={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+ const mo=months[dmy[2].toLowerCase()];return mo?`${dmy[3]}-${mo}-${dmy[1].padStart(2,'0')}`:null;
+}
+let supplementPricesRunning=false;
+async function supplementNiftyPrices(){
+ if(supplementPricesRunning||!nifty50CompanyRows||!nifty50CompanyRows.some(x=>x.price==null))return;
+ supplementPricesRunning=true;
+ try{
+  const snapshotDate=quoteTradingDate(nifty50CompanyTime);
+  const batch=await loadBreadthBatches();
+  const batchDate=quoteTradingDate(batch.asOf);
+  // If the original index quote is undated, do not combine values.
+  if(!snapshotDate||snapshotDate!==batchDate)return;
+  const prices=new Map(batch.items.map(x=>[x.symbol,x]));
+  nifty50CompanyRows.forEach(row=>{
+    const hit=prices.get(row.symbol);if(!hit)return;
+    if(row.price===null&&Number.isFinite(hit.price)&&hit.price>0)row.price=hit.price;
+    if(row.change===null&&Number.isFinite(hit.change))row.change=hit.change;
+  });
+  if(document.getElementById('breadthLayer')?.style.display!=='none')renderBreadthExplorer();
+ }catch(_){/* original percentage rankings remain available */}
+ finally{supplementPricesRunning=false}
+}
+async function loadNifty50Companies(){
+ if(!API_BASE){document.getElementById('breadthResults').textContent='Connect the market data service to load company-level breadth.';return;}
+ const source=document.getElementById('breadthExplorerSource');source.textContent='Checking NSE 50-stock list…';
+ try{
+  const c=new AbortController(),timer=setTimeout(()=>c.abort(),12000);let r;
+  try{r=await fetch(`${API_BASE}/api/nifty50-stocks`,{cache:'no-store',signal:c.signal})}finally{clearTimeout(timer)}
+  const j=await r.json();if(!r.ok||!j.ok||!storeNifty50Rows(j.items,j.source,j.asOf))throw Error(j.error||'Market snapshot incomplete');
+  // Some exchange snapshots contain percentage moves but omit lastPrice.
+  // Try dated stock quotes separately; never merge mismatched trading sessions.
+  if(nifty50CompanyRows.some(x=>x.price===null))supplementNiftyPrices();
+ }catch(e){
+  source.textContent='Checking last available market prices…';
+  try{const d=await loadBreadthBatches();if(!storeNifty50Rows(d.items,d.source,d.asOf))throw Error('Unable to validate 50 constituents')}
+  catch(err){
+   if(!nifty50CompanyRows){document.getElementById('breadthResults').textContent='Company-level breadth unavailable right now. Please try again later. Prices and rankings are not estimated.';source.textContent='Market prices are temporarily unavailable';return}
+   source.textContent='Source check unavailable · showing last verified list';
+  }
+ }
+ if(nifty50CompanyRows){const adv=breadthCount('adv'),dec=breadthCount('dec'),unchanged=breadthCount('flat');
+ marketData.breadth={adv,dec,unchanged,source:nifty50CompanySource,time:nifty50CompanyTime,coverage:50,method:'constituent-list'};
+ document.getElementById('advVal').textContent=adv;document.getElementById('decVal').textContent=dec;
+ document.getElementById('breadthStamp').textContent=`${nifty50CompanySource} · ${nifty50CompanyTime} · 50/50`;
+ }
+ if(document.getElementById('breadthLayer').style.display!=='none')renderBreadthExplorer();
+}
+function toggleBreadthWatchNav(){
+ const nav=document.getElementById('breadthWatchNav');if(!nav)return;nav.style.display=breadthWatchlist.length?'flex':'none';
+ if(breadthWatchlist.length){const pos=Math.max(0,breadthWatchlist.indexOf(selectedPulseSymbol.replace(/\.NS$/,'')));
+ document.getElementById('breadthWatchProgress').textContent=`Nifty 50 shortlist · ${pos+1}/${breadthWatchlist.length}`;}
+}
+function watchBreadthCompany(symbol){
+ if(!/^[A-Z0-9&-]{1,22}$/.test(symbol))return;
+ closeBreadthExplorer();watchSectorConstituent(symbol,nifty50CompanyRows?.find(x=>x.symbol===symbol)?.name||symbol);
+ toggleBreadthWatchNav();
+}
+function selectTopBreadthStocks(n){breadthFilteredRows().slice(0,n).forEach(x=>breadthShortlist.add(x.symbol));renderBreadthExplorer()}
+function clearBreadthSelection(){breadthShortlist.clear();renderBreadthExplorer()}
+function watchBreadthSelected(){
+ const visible=breadthFilteredRows().filter(x=>breadthShortlist.has(x.symbol));
+ const remaining=(nifty50CompanyRows||[]).filter(x=>breadthShortlist.has(x.symbol)&&!visible.some(y=>y.symbol===x.symbol)).sort((a,b)=>b.pct-a.pct);
+ const symbols=[...visible,...remaining].map(x=>x.symbol);
+ if(!symbols.length)return;breadthWatchlist=symbols;try{localStorage.setItem(BREADTH_WATCH_STORAGE,JSON.stringify(symbols))}catch(_){}
+ watchBreadthCompany(symbols[0]);toggleBreadthWatchNav();
+}
+function stepBreadthWatch(delta){
+ if(!breadthWatchlist.length)return;
+ const current=selectedPulseSymbol.replace(/\.NS$/,'');const ix=breadthWatchlist.indexOf(current);
+ const next=(Math.max(ix,0)+delta+breadthWatchlist.length)%breadthWatchlist.length;
+ setWatchSymbol(breadthWatchlist[next]+'.NS');toggleBreadthWatchNav();
+}
+function clearBreadthWatch(){breadthWatchlist=[];try{localStorage.removeItem(BREADTH_WATCH_STORAGE)}catch(_){}toggleBreadthWatchNav()}
+try{const saved=JSON.parse(localStorage.getItem(BREADTH_WATCH_STORAGE)||'[]');if(Array.isArray(saved))breadthWatchlist=saved.filter(x=>/^[A-Z0-9&-]{1,22}$/.test(x)).slice(0,50)}catch(_){}
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('breadthLayer')?.style.display!=='none')closeBreadthExplorer()});
+
+const GIFT_STORAGE_KEY='mm9_verified_gift_r4';
+let lastGiftFetchAt=0, giftFetchInFlight=false, giftFetchError='';
+function restoreGiftSnapshot(){
+ try{
+  const s=JSON.parse(localStorage.getItem(GIFT_STORAGE_KEY)||'null');
+  if(!s || !s.checkedAt || Date.now()-s.checkedAt>72*3600000 || !Number.isFinite(Number(s.price)))return;
+  marketData.gift={price:s.price,pct:s.pct,epoch:s.epoch,asOf:s.asOf,source:s.source,expiry:s.expiry,isCached:true};
+  giftFetchError='Last saved verified GIFT quote';
+ }catch(_){}
+}
+async function refreshGiftNifty(force=false){
+ const giftPollingMs=/^Session /.test(giftSessionStatus())&&!giftFetchError?15000:60000;
+ if(!API_BASE||giftFetchInFlight||(!force&&Date.now()-lastGiftFetchAt<giftPollingMs))return;
+ giftFetchInFlight=true;lastGiftFetchAt=Date.now();
+ try{
+  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),11000);
+  let r;try{r=await fetch(`${API_BASE}/api/gift`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(timer)}
+  const j=await r.json();
+  if(!r.ok||!j.ok||!j.quote||!Number.isFinite(Number(j.quote.price))||!j.quote.asOf)throw Error(j.error||'No verified GIFT quote');
+  const q=j.quote;
+  marketData.gift={price:q.price,pct:q.pct,epoch:q.epoch,asOf:q.asOf,source:q.source,expiry:q.expiry,isCached:false,ageMinutes:q.ageMinutes};
+  giftFetchError='';
+  try{localStorage.setItem(GIFT_STORAGE_KEY,JSON.stringify({...marketData.gift,checkedAt:Date.now()}))}catch(_){}
+ }catch(e){giftFetchError=String(e?.message||e);if(!marketData.gift?.asOf)restoreGiftSnapshot()}
+ finally{giftFetchInFlight=false;render();}
+}
+
+function renderSectors(){
+ const el=document.getElementById('sectorList');el.innerHTML='';
+ const records=new Map((marketData.sectors||[]).map(s=>[s[0],s]));
+ const all=SECTOR_DIRECTORY;
+ let priced=0;
+ all.forEach(name=>{
+   const sector=records.get(name);
+   const priceChange=sector?sector[2]:null;
+   const available=priceChange!==null&&priceChange!==undefined&&Number.isFinite(Number(priceChange));
+   if(available)priced++;
+   const row=document.createElement('div');
+   row.className='sector clickable';row.dataset.sector=name.toLowerCase();row.setAttribute('role','button');row.setAttribute('tabindex','0');
+   row.setAttribute('aria-label',`Open ${name} sector details`);
+   row.onclick=()=>openSectorDetail(name);
+   row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSectorDetail(name)}};
+   const title=document.createElement('div');
+   const bold=document.createElement('b');bold.textContent=name;title.appendChild(bold);
+   if(name==='Infrastructure'||name==='Energy'){
+     const tag=document.createElement('span');tag.className='sector-theme-tag';tag.textContent='Thematic';tag.title='Theme with companies that also belong to other sectors';title.appendChild(tag);
+   }else if(name==='Financial Services'||name==='PSU Bank'||name==='Banking'){
+     const tag=document.createElement('span');tag.className='sector-overlap-tag';tag.textContent='Shared stocks';tag.title='Companies may appear in other financial indices';title.appendChild(tag);
+   }
+   if(!available){const note=document.createElement('div');note.className='sector-quote-note';note.textContent='Tap for sector scope and investor guidance';title.appendChild(note)}
+   const change=document.createElement('span');change.textContent=available?fmtPct(priceChange):'—';change.className=available?cls(Number(priceChange)):'sector-unavailable';
+   const dot=document.createElement('span');dot.textContent=available?icon(Number(priceChange)):'◌';dot.className=available?'':'sector-unavailable';
+   row.append(title,change,dot);el.appendChild(row);
+ });
+ const source=priced?`Source: ${marketData.sectorSource||'public market feed'} · ${marketData.timestamp||'timestamp unavailable'}`:'Live sector quotes are unavailable. Every sector remains tappable; prices are not estimated.';
+ document.getElementById('sectorStamp').textContent=`${priced}/${all.length} sector quotes available · ${source}`;filterSectorRows();
+}
+function timelineSlots(){
+ const out=[];let h=9,m=15;
+ while(h<15 || (h===15&&m<=30)){out.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);m+=30;if(m>=60){h++;m-=60}}
+ if(out[out.length-1]!=='15:30')out.push('15:30');
+ return out;
+}
+function nearestPoint(slot){
+ if(!timelinePoints.length)return null;
+ const [h,m]=slot.split(':').map(Number);const sm=h*60+m;
+ let best=null,dist=999;
+ timelinePoints.forEach(p=>{const [ph,pm]=p.time.split(':').map(Number);const d=Math.abs(ph*60+pm-sm);if(d<dist&&d<=18){best=p;dist=d}});
+ return best;
+}
+function selectedIntradayChart(){
+ const stock=selectedPulseSymbol!=='^NSEI';
+ const pack=(pulseDataBySymbol[selectedPulseSymbol]||latestPulsePack);
+ if(stock){
+  if(pack?.symbol!==selectedPulseSymbol)return {name:activeSymbolName(),rows:[],source:'Stock market information is being retrieved.',date:null};
+  const intraday=pack.intraday;
+  return {name:activeSymbolName(),rows:Array.isArray(intraday?.points)?intraday.points:[],source:intraday?.source||'Intraday price data unavailable. Historical close chart remains below.',date:intraday?.sessionDate||null};
+ }
+ const intraday=pack?.symbol==='^NSEI'?pack?.intraday:null;
+ const rows=timelinePoints.length?timelinePoints:(Array.isArray(intraday?.points)?intraday.points:[]);
+ return {name:'Nifty 50',rows,source:timelinePoints.length?'Market quote service · latest intraday snapshot':intraday?.source||'Awaiting Nifty intraday source',date:intraday?.sessionDate||null};
+}
+function renderTimeline(){
+ const data=selectedIntradayChart(),pts=data.rows;
+ const title=document.getElementById('trendTitle');
+ if(title)title.textContent=`${data.name} Intraday Chart · 09:15 to 15:30 IST`;
+ const src=document.getElementById('trendSourceNote');
+ if(src)src.textContent=`${data.source}${data.date?' · Trading session '+data.date:''} · Price and % versus previous close (when available).`;
+ const row=document.getElementById('slotRow');row.replaceChildren();
+ const slots=timelineSlots();
+ slots.forEach(s=>{
+  const [hh,mm]=s.split(':').map(Number),target=hh*60+mm;
+  let near=null,distance=999;
+  for(const p of pts){const [ph,pm]=String(p.time||'').split(':').map(Number);const d=Math.abs(ph*60+pm-target);if(d<distance&&d<=18){near=p;distance=d}}
+  const card=document.createElement('div');card.className='slot';
+  const b=document.createElement('b');b.textContent=s;card.appendChild(b);
+  const small=document.createElement('small');small.textContent=near?'Recorded':'No data';card.appendChild(small);
+  const v=document.createElement('div');v.className='pct '+(near&&Number.isFinite(Number(near.pct))?cls(Number(near.pct)):'');v.textContent=near&&Number.isFinite(Number(near.pct))?fmtPct(Number(near.pct)):'—';card.appendChild(v);
+  const px=document.createElement('small');px.textContent=near&&Number.isFinite(Number(near.price))?fmtNum(Number(near.price)):'Price unavailable';card.appendChild(px);
+  row.appendChild(card);
+ });
+ drawTrend(pts,data.name);
+}
+function drawTrend(points,name){
+ const svg=document.getElementById('trendSvg');svg.replaceChildren();
+ const pts=(points||[]).filter(p=>p&&/^\d{2}:\d{2}$/.test(p.time)&&Number.isFinite(Number(p.price)))
+  .slice().sort((a,b)=>a.time.localeCompare(b.time));
+ const readout=document.getElementById('trendReadout');
+ if(pts.length<2){svg.innerHTML='<text x="75" y="84" font-size="12" fill="#677983">Intraday chart unavailable for this symbol</text>';
+  if(readout)readout.textContent='No verified intraday prices for this stock/session. Try another ticker or check the 20-day closing-price chart.';
+  return;
+ }
+ const W=440,H=170,L=46,R=12,T=13,B=28;
+ const closes=pts.map(p=>Number(p.price));
+ const pMin=Math.min(...closes),pMax=Math.max(...closes),padding=Math.max((pMax-pMin)*.16,pMax*.001,0.01),low=pMin-padding,high=pMax+padding;
+ const yPrice=p=>T+(high-Number(p.price))/(high-low)*(H-T-B);
+ const xTime=p=>{const [h,m]=p.time.split(':').map(Number);return L+(h*60+m-555)/375*(W-L-R)};
+ for(const val of [low,(low+high)/2,high]){
+  const yy=yPrice({price:val});svg.insertAdjacentHTML('beforeend',`<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" class="gridline"/><text class="axis" x="2" y="${yy+3}">${Math.round(val).toLocaleString('en-IN')}</text>`);
+ }
+ for(const t of ['09:15','11:00','13:00','15:30']){const [h,m]=t.split(':').map(Number),x=L+(h*60+m-555)/375*(W-L-R);svg.insertAdjacentHTML('beforeend',`<text class="axis" x="${x-14}" y="${H-7}">${t}</text>`)}
+ const path=pts.map((p,i)=>`${i?'L':'M'} ${xTime(p).toFixed(2)} ${yPrice(p).toFixed(2)}`).join(' ');
+ const area=`${path} L ${xTime(pts.at(-1))} ${H-B} L ${xTime(pts[0])} ${H-B} Z`;
+ svg.insertAdjacentHTML('beforeend',`<path class="trendarea" d="${area}"/><path class="trendline" d="${path}"/>`);
+ pts.forEach(p=>svg.insertAdjacentHTML('beforeend',`<circle cx="${xTime(p)}" cy="${yPrice(p)}" r="2.6" fill="#28719F"><title>${p.time} · ${fmtNum(Number(p.price))} · ${Number.isFinite(Number(p.pct))?fmtPct(Number(p.pct)):'Change unavailable'}</title></circle>`));
+ if(readout){const p=pts.at(-1);readout.textContent=`${name} · ${p.time} IST · ${fmtNum(Number(p.price))}${Number.isFinite(Number(p.pct))?' · '+fmtPct(Number(p.pct)):''} · Tap/hover a point`}
+ bindChartHover(svg,pts,{width:W,x:xTime,y:yPrice,label:p=>`${name} · ${p.time} IST · ${fmtNum(Number(p.price))}${Number.isFinite(Number(p.pct))?' · '+fmtPct(Number(p.pct)):' · % unavailable'}`},'trendReadout');
+}
+function bindChartHover(svg,records,coordinates,readout){
+ if(!svg||!records?.length)return;
+ const all=records.map((r,i)=>({r,x:coordinates.x(r,i),y:coordinates.y(r,i)})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+ if(!all.length)return;
+ const label=typeof readout==='string'?document.getElementById(readout):readout;
+ const svgNS='http://www.w3.org/2000/svg';
+ let marker=svg.querySelector('.active-chart-marker');
+ if(!marker){marker=document.createElementNS(svgNS,'circle');marker.setAttribute('class','active-chart-marker');marker.setAttribute('r','5');marker.setAttribute('fill','#EABF49');marker.setAttribute('stroke','#12354A');marker.setAttribute('stroke-width','2');marker.setAttribute('pointer-events','none');svg.appendChild(marker)}
+ const show=p=>{marker.setAttribute('cx',p.x);marker.setAttribute('cy',p.y);marker.style.display='';if(label)label.textContent=coordinates.label(p.r)};
+ marker.style.display='none';
+ svg.addEventListener('pointermove',e=>{const rect=svg.getBoundingClientRect();if(!rect.width)return;const vx=(e.clientX-rect.left)/rect.width*coordinates.width;let nearest=all[0];for(const p of all)if(Math.abs(p.x-vx)<Math.abs(nearest.x-vx))nearest=p;show(nearest)});
+ svg.addEventListener('pointerleave',()=>marker.style.display='none');
+ svg.addEventListener('click',e=>{const rect=svg.getBoundingClientRect();const vx=(e.clientX-rect.left)/rect.width*coordinates.width;let nearest=all[0];for(const p of all)if(Math.abs(p.x-vx)<Math.abs(nearest.x-vx))nearest=p;show(nearest)});
+ // Keyboard access: point labels are also represented in SVG <title> elements.
+}
+function renderHistoryChart(rows){
+ const svg=document.getElementById('historySvg'),readout=document.getElementById('historyTooltip');if(!svg)return;
+ svg.replaceChildren();
+ if(rows.length<2){readout.textContent='A history chart appears once two completed daily closes are available.';return}
+ const W=440,H=180,L=58,R=15,T=15,B=35;
+ const vals=rows.map(r=>Number(r.close)),mn=Math.min(...vals),mx=Math.max(...vals),pad=Math.max((mx-mn)*.15,mx*.003,1),min=mn-pad,max=mx+pad;
+ const x=(r,i)=>L+i/(rows.length-1)*(W-L-R),y=r=>T+(max-Number(r.close))/(max-min)*(H-T-B);
+ const ticks=[min,(min+max)/2,max];
+ ticks.forEach(v=>svg.insertAdjacentHTML('beforeend',`<line x1="${L}" y1="${y({close:v})}" x2="${W-R}" y2="${y({close:v})}" stroke="#E3E9E7"/><text x="1" y="${y({close:v})+4}" font-size="10" fill="#6D7E86">${Math.round(v).toLocaleString('en-IN')}</text>`));
+ const path=rows.map((r,i)=>`${i?'L':'M'} ${x(r,i).toFixed(2)} ${y(r).toFixed(2)}`).join(' ');
+ svg.insertAdjacentHTML('beforeend',`<path d="${path}" fill="none" stroke="#1879A5" stroke-width="2.7" stroke-linejoin="round"/>`);
+ for(const i of [0,Math.floor((rows.length-1)/2),rows.length-1]){const r=rows[i];svg.insertAdjacentHTML('beforeend',`<text x="${Math.max(1,x(r,i)-26)}" y="${H-10}" font-size="10" fill="#687880">${r.date.slice(5)}</text>`)}
+ rows.forEach((r,i)=>svg.insertAdjacentHTML('beforeend',`<circle cx="${x(r,i)}" cy="${y(r)}" r="3" fill="#197DA5" class="chart-point" tabindex="0"><title>${r.date}: ${fmtNum(r.close)}</title></circle>`));
+ readout.textContent=`${rows.at(-1).date}: close ${fmtNum(rows.at(-1).close)} · touch or hover a point for details`;
+ bindChartHover(svg,rows,{width:W,x,y,label:r=>`${r.date} · ${selectedPulseSymbol==='^NSEI'?'Nifty 50':'Stock'} close ${fmtNum(Number(r.close))} · ${r.changeValue!=null?historyDeltaText(r.changeValue)+' '+historyDeltaUnit():'change unavailable'} · ${r.changePct!=null&&Number.isFinite(Number(r.changePct))?fmtPct(Number(r.changePct)):'% unavailable'}`},readout);
+}
+function timeIST(epoch){
+ return new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(epoch*1000));
+}
+// R5.2 split fast quote updates from slower sector feeds to avoid Worker CPU exhaustion.
+let latestIndexGroups={},lastQuoteGroupCheck={},lastQuoteGroupAttempt={};
+let sectorSnapshotRequest=null,lastSectorSnapshotAt=0;
+async function fetchFastGroup(group){
+ lastQuoteGroupAttempt[group]=Date.now();
+ const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);
+ try{
+   const r=await fetch(`${API_BASE}/api/live-quotes?group=${encodeURIComponent(group)}`,{
+      cache:'no-store',signal:ctl.signal,headers:{Accept:'application/json'}
+   });
+   if(!r.ok)throw Error(group+' quote service HTTP '+r.status);
+   const j=await r.json();if(!j?.ok||!j.quotes)throw Error(group+' quote response unavailable');
+   latestIndexGroups[group]=j;
+   lastQuoteGroupCheck[group]=Date.now();
+   return j;
+ }finally{clearTimeout(timer)}
+}
+function isQuoteGroupActive(group){
+ if(group==='india')return marketOpenNow();
+ const u=usSessionStatus(),sgx=sgxSessionStatus();
+ return u==='Regular'||u==='Pre-Market'||u==='After-Hours'||sgx.startsWith('Open')||sgx.includes('auction');
+}
+async function fetchProxyMarket(force=false){
+ if(!API_BASE || API_BASE.includes('REPLACE-WITH-YOUR-WORKER'))return null;
+ // Both groups may return independently. A failed US source must not blank Indian quotes.
+ const settled=await Promise.allSettled(['india','global'].map(group=>{
+    const active=isQuoteGroupActive(group);
+    const previous=latestIndexGroups[group];
+    const sinceSuccess=Date.now()-(lastQuoteGroupCheck[group]||0);
+    const sinceAttempt=Date.now()-(lastQuoteGroupAttempt[group]||0);
+    // Keep the UI 15s check, but avoid wasteful requests for already-closed exchanges.
+    const interval=active?14500:120000;
+    if(!force&&previous&&sinceSuccess<interval)return Promise.resolve(previous);
+    if(!force&&sinceAttempt<30000&&!previous)return Promise.reject(Error(group+' source retry pending'));
+    return fetchFastGroup(group);
+ }));
+ const quotes={},errors={},groups=[];
+ for(let i=0;i<settled.length;i++){
+   const group=['india','global'][i],result=settled[i];
+   if(result.status==='fulfilled'){
+      Object.assign(quotes,result.value.quotes||{});
+      Object.assign(errors,result.value.errors||{});
+      groups.push(group);
+   }else if(latestIndexGroups[group]?.quotes){
+      // Keep last verified readings, retaining their original source epoch.
+      Object.assign(quotes,latestIndexGroups[group].quotes);
+      errors[group]=String(result.reason?.message||result.reason);
+   }else errors[group]=String(result.reason?.message||result.reason);
+ }
+ if(!Object.keys(quotes).length)throw Error('Market quote sources unavailable; last saved readings retained.');
+ return {ok:true,quotes,errors,groups,source:'Available market quote feeds',generatedAt:new Date().toISOString(),sectors:[]};
+}
+async function refreshSectorSnapshot(force=false){
+ if(!API_BASE || sectorSnapshotRequest || (!force&&Date.now()-lastSectorSnapshotAt<90000))return;
+ lastSectorSnapshotAt=Date.now();
+ sectorSnapshotRequest=(async()=>{
+   const jobs=await Promise.allSettled([0,1,2].map(async part=>{
+     const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),11000);
+     try{
+       const res=await fetch(`${API_BASE}/api/sector-quotes?part=${part}`,{cache:'no-store',signal:ctl.signal});
+       if(!res.ok)throw Error('Sector feed '+part+' HTTP '+res.status);
+       const j=await res.json();return Array.isArray(j.sectors)?j.sectors:[];
+     }finally{clearTimeout(timer)}
+   }));
+   const merged=new Map((marketData.sectors||[]).map(item=>[item[0],item]));
+   for(const job of jobs)if(job.status==='fulfilled')for(const s of job.value){
+      if(s.name && Number.isFinite(Number(s.price))&&Number.isFinite(Number(s.pct))) merged.set(s.name,[s.name,Number(s.price),Number(s.pct)]);
+   }
+   // Banking uses the existing Bank Nifty quote.
+   const bank=marketData.bank;
+   if(Number.isFinite(Number(bank?.price))&&Number.isFinite(Number(bank?.pct)))merged.set('Banking',['Banking',Number(bank.price),Number(bank.pct)]);
+   if(merged.size){marketData.sectors=[...merged.values()];marketData.sectorSource='Latest available sector quotes';render()}
+ })().catch(e=>console.warn('Sector detail update unavailable',e)).finally(()=>sectorSnapshotRequest=null);
+ return sectorSnapshotRequest;
+}
+function nullableQuoteNumber(v){return v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null)}
+function normalizedFromProxy(q){
+ if(!q) return null;
+ return {
+   price:nullableQuoteNumber(q.price),
+   pct:nullableQuoteNumber(q.pct),
+   time:q.time||'',
+   prev:nullableQuoteNumber(q.prev),
+   open:nullableQuoteNumber(q.open),
+   high:nullableQuoteNumber(q.high),
+   low:nullableQuoteNumber(q.low),
+   epoch:nullableQuoteNumber(q.epoch),
+   timeline:Array.isArray(q.timeline)?q.timeline:[]
+ };
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs=8500){
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),timeoutMs);
+ try{
+   const r=await fetch(url,{cache:'no-store',signal:controller.signal,headers:{'Accept':'application/json,text/plain,*/*'}});
+   if(!r.ok)throw new Error('HTTP '+r.status);
+   const text=await r.text();
+   try{return JSON.parse(text)}catch(e){throw new Error('Invalid JSON')}
+ }finally{clearTimeout(timer)}
+}
+async function yahooChart(symbol,interval='5m',range='1d'){
+ const target=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&includePrePost=false`;
+ const routes=[
+   {name:'Direct public quote',url:target},
+   {name:'Public relay A',url:`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`},
+   {name:'Public relay B',url:`https://corsproxy.io/?url=${encodeURIComponent(target)}`}
+ ];
+ let lastErr=null;
+ for(const route of routes){
+   try{
+     const j=await fetchJsonWithTimeout(route.url,8500);
+     const result=j?.chart?.result?.[0];
+     if(result){result.__route=route.name;return result}
+     throw new Error('No chart result');
+   }catch(e){lastErr=e}
+ }
+ throw lastErr||new Error('All public quote routes failed');
+}
+function quoteFromChart(r){
+ const meta=r.meta||{}, quote=r.indicators?.quote?.[0]||{};
+ const price=Number(meta.regularMarketPrice), prev=Number(meta.chartPreviousClose||meta.previousClose);
+ const pct=(Number.isFinite(price)&&Number.isFinite(prev)&&prev!==0)?(price-prev)/prev*100:null;
+ const ts=meta.regularMarketTime?timeIST(meta.regularMarketTime):nowIST();
+ const clean=a=>(a||[]).map(Number).filter(Number.isFinite);
+ const highs=clean(quote.high),lows=clean(quote.low),opens=clean(quote.open);
+ return {
+   price,pct,time:ts,prev,
+   open:opens.length?opens[0]:null,
+   high:highs.length?Math.max(...highs):null,
+   low:lows.length?Math.min(...lows):null,
+   epoch:Number(meta.regularMarketTime)||null
+ };
+}
+function timelineFromChart(r){
+ const ts=r.timestamp||[],close=r.indicators?.quote?.[0]?.close||[],prev=Number(r.meta?.chartPreviousClose||r.meta?.previousClose);
+ const pts=[];
+ for(let i=0;i<ts.length;i++){
+  const c=Number(close[i]);if(!Number.isFinite(c)||!Number.isFinite(prev)||!prev)continue;
+  const t=timeIST(ts[i]);const [h,m]=t.split(':').map(Number);const mins=h*60+m;
+  if(mins>=555&&mins<=930)pts.push({time:t,pct:(c-prev)/prev*100});
+ }
+ return pts;
+}
+function seedFallbackTimeline(){
+ if(dateIST()===FALLBACK_DATE)timelinePoints=fallback.seedTimeline.slice();
+ const saved=JSON.parse(localStorage.getItem('mm9Trend')||'[]');
+ if(Array.isArray(saved)&&saved.length)timelinePoints=[...timelinePoints,...saved].filter((p,i,a)=>a.findIndex(x=>x.time===p.time)===i);
+}
+function saveCurrentPoint(){
+ const p=marketData.nifty?.pct;if(!Number.isFinite(p))return;
+ const t=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());
+ const [h,m]=t.split(':').map(Number),mins=h*60+m;if(mins<555||mins>930)return;
+ const roundedM=Math.round(m/5)*5;let rh=h,rm=roundedM;if(rm===60){rh++;rm=0}
+ const time=`${String(rh).padStart(2,'0')}:${String(rm).padStart(2,'0')}`;
+ const saved=JSON.parse(localStorage.getItem('mm9Trend')||'[]').filter(x=>x.time!==time);saved.push({time,pct:p});
+ localStorage.setItem('mm9Trend',JSON.stringify(saved.slice(-100)));
+}
+async function refreshAll(manual=false){
+ if(refreshInFlight)return;
+ // Calendar refresh uses a separate minute-scale schedule, not the 15-second quote poll.
+ await refreshNseSession(false);
+ refreshInFlight=true;
+ const btn=document.getElementById('refreshBtn');
+ btn.disabled=true;btn.classList.add('loading');
+ document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing from available market sources':'Refreshing public sources');
+ let liveCount=0, routeNames=new Set(), hadAnyError=false, proxyError="";
+ try{
+   let proxyPack=null;
+   try{ proxyPack=await fetchProxyMarket(manual); }catch(proxyErr){ proxyPack=null; proxyError=String(proxyErr?.message||proxyErr); }
+   refreshSectorSnapshot(false);
+   const symbols={nifty:'^NSEI',bank:'^NSEBANK',sensex:'^BSESN',vix:'^INDIAVIX',nasdaq:'^IXIC',sp:'^GSPC',nikkei:'^N225',sgx:'^STI'};
+   let results=[], got={};
+   if(proxyPack){
+     Object.entries(proxyPack.quotes).forEach(([k,q])=>{
+       got[k]={__proxyNormalized:q,__route:'Market data source'};
+       liveCount++;
+       routeNames.add('Market data source');
+     });
+     if(Array.isArray(proxyPack.sectors)&&proxyPack.sectors.length){
+       marketData.sectors=proxyPack.sectors
+         .filter(s=>Number.isFinite(Number(s.price))&&Number.isFinite(Number(s.pct)))
+         .map(s=>[s.name,Number(s.price),Number(s.pct)]);
+       marketData.sectorSource='Market data source';
+     }
+   }else if(!API_BASE){
+     results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
+   
+     results.forEach(x=>{
+       if(x.status==='fulfilled'){
+         got[x.value[0]]=x.value[1];
+         liveCount++;
+         if(x.value[1].__route)routeNames.add(x.value[1].__route);
+       }else hadAnyError=true;
+     });
+   }
+   let latestIndianEpoch=null;
+   ['nifty','bank','sensex','vix'].forEach(k=>{
+     if(got[k]){
+       const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
+       marketData[k]={price:q.price,pct:q.pct,source:got[k].__proxyNormalized?'Market data source':'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
+       if(q.epoch){
+         latestIndianEpoch=Math.max(latestIndianEpoch||0,Number(q.epoch));
+         marketData.asOfEpoch=Number(q.epoch)*1000;
+       }
+     }
+   });
+   if(got.nifty){
+     const pts=got.nifty.__proxyNormalized
+       ? (Array.isArray(got.nifty.__proxyNormalized.timeline)?got.nifty.__proxyNormalized.timeline:[])
+       : timelineFromChart(got.nifty);
+     if(pts.length){
+       timelinePoints=pts;
+       localStorage.setItem('mm9Trend',JSON.stringify(pts.slice(-200)));
+     }
+   }
+   if(latestIndianEpoch){
+     const d=new Date(latestIndianEpoch*1000);
+     const datePart=new Intl.DateTimeFormat('en-GB',{timeZone:IST,day:'2-digit',month:'short',year:'numeric'}).format(d);
+     const timePart=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
+     marketData.timestamp=`${datePart} · ${timePart} IST`;
+     marketData.asOfEpoch=latestIndianEpoch*1000;
+     marketData.mode=proxyPack?'Market data source':'Public web market data';
+   }
+   if(got.nasdaq){
+     const q=got.nasdaq.__proxyNormalized?normalizedFromProxy(got.nasdaq.__proxyNormalized):quoteFromChart(got.nasdaq); marketData.global=marketData.global||{}; marketData.global.nasdaq=q;
+     document.getElementById('nasdaqMarket').textContent=fmtPct(q.pct);
+     document.getElementById('nasdaqMarket').className='sv '+cls(q.pct);
+     document.getElementById('nasdaqDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
+   }
+   if(got.sp){
+     const q=got.sp.__proxyNormalized?normalizedFromProxy(got.sp.__proxyNormalized):quoteFromChart(got.sp); marketData.global=marketData.global||{}; marketData.global.sp=q;
+     document.getElementById('spMarket').textContent=fmtPct(q.pct);
+     document.getElementById('spMarket').className='sv '+cls(q.pct);
+     document.getElementById('spDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
+   }
+   if(got.sgx){
+     const q=got.sgx.__proxyNormalized?normalizedFromProxy(got.sgx.__proxyNormalized):quoteFromChart(got.sgx);
+     marketData.global=marketData.global||{};
+     marketData.global.sgx=q;
+     marketData.sgxSource='Singapore market quote';
+   }
+   if(got.nikkei){
+     const q=got.nikkei.__proxyNormalized?normalizedFromProxy(got.nikkei.__proxyNormalized):quoteFromChart(got.nikkei); marketData.global=marketData.global||{}; marketData.global.nikkei=q;
+     document.getElementById('nikkeiMarket').textContent=fmtPct(q.pct);
+     document.getElementById('nikkeiMarket').className='sv '+cls(q.pct);
+     document.getElementById('nikkeiDot').className='dot '+(q.pct>0?'g':q.pct<0?'r':'a');
+   }
+   const globalPcts=['nasdaq','sp','nikkei'].filter(k=>got[k]).map(k=>{
+     const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
+     return q.pct;
+   }).filter(Number.isFinite);
+   marketData.globalAligned=globalPcts.length?globalPcts.reduce((a,b)=>a+b,0)>=0:null;
+
+   if(liveCount>=3){
+      lastSuccessfulMode='live';
+      // Preserve actual exchange quote timestamps; only 'Checked' uses current time.
+      marketData.mode=proxyPack?'Market data source':'Public web market data';
+      const routes=[...routeNames].join(' + ');
+      document.getElementById('sourceMode').textContent=proxyPack
+        ? `${liveCount} source quotes checked from available market sources · see quote timestamps`
+        : `${liveCount} sources refreshed${routes?' · '+routes:''}`;
+   }else if(liveCount>0){
+      lastSuccessfulMode='live';
+      // Keep the actual per-quote observation timestamp rather than the check time.
+      marketData.mode=proxyPack?'Market data source (partial)':'Public source (partial)';
+      document.getElementById('sourceMode').textContent=proxyPack
+        ? `Partial quote check: ${liveCount} source${liveCount===1?'':'s'}`
+        : `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`;
+   }else{
+      lastSuccessfulMode='fallback';
+      document.getElementById('sourceMode').textContent=API_BASE?'Market prices are temporarily unavailable':'Public source unavailable';
+   }
+ }catch(e){
+   lastSuccessfulMode='fallback';
+   document.getElementById('sourceMode').textContent=API_BASE?'Market prices are temporarily unavailable':'Public source unavailable';
+ }finally{
+   saveCurrentPoint();
+   if(liveCount>0 && Number.isFinite(marketData.nifty?.pct)) saveIndianSnapshot();
+   const completed=new Date();
+   lastRefreshCompletedAt=completed.getTime();
+   refreshGold(false);
+   refreshSilver(false);
+   refreshGiftNifty(false);
+   document.getElementById('lastUpdate').textContent='Checked '+nowIST();
+   const quoteAge=Number(marketData.asOfEpoch);
+   const quoteStamp=Number.isFinite(quoteAge)?new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(quoteAge)):'—';
+   const quoteStatus=document.getElementById('refreshQuoteStatus');
+   if(quoteStatus)quoteStatus.textContent='Latest Indian quote: '+quoteStamp+' IST';
+   const prev=JSON.parse(localStorage.getItem('mm9PulsePrev')||'null');
+   render();
+   const cur=scoreModel();
+   if(prev&&Number.isFinite(prev.score)){
+     const d=cur.score-prev.score;
+     document.getElementById('changeBox').className='alert '+(Math.abs(d)<8?'amber':d>0?'green':'red');
+     document.getElementById('changeBox').innerHTML=`<b>${d===0?'Pulse unchanged':`Pulse ${d>0?'strengthened':'weakened'} by ${Math.abs(d)} points`}</b><br/>Previous saved reading: ${prev.score>0?'+':''}${prev.score}. Current reading: ${cur.score>0?'+':''}${cur.score}.`;
+   }
+   localStorage.setItem('mm9PulsePrev',JSON.stringify({score:cur.score,time:Date.now()}));
+   if(selectedPulseSymbol!=='^NSEI'||selectedFrame!=='current') maybeRefreshPulse();
+   btn.disabled=false;btn.classList.remove('loading');
+   refreshInFlight=false;
+   scheduleNextRefresh();
+ }
+}
+
+
+const SECTOR_META = {
+  'IT': {
+    scope:'Indian information-technology and software-services companies.',
+    drivers:'Global technology spending, US/Europe demand, deal wins, INR/USD movement and employee costs.'
+  },
+  'Auto': {
+    scope:'Indian automobile manufacturers and auto-related companies.',
+    drivers:'Vehicle demand, interest rates, fuel prices, rural/urban consumption and commodity input costs.'
+  },
+  'Pharma': {
+    scope:'Indian pharmaceutical and healthcare-oriented listed companies.',
+    drivers:'Drug approvals, USFDA actions, product launches, export demand, pricing and currency movement.'
+  },
+  'FMCG': {
+    scope:'Consumer-staples companies selling everyday household and personal-use products.',
+    drivers:'Rural/urban demand, inflation, raw-material prices, pricing power and consumer sentiment.'
+  },
+  'Metal': {
+    scope:'Indian metal, mining, steel and non-ferrous companies.',
+    drivers:'Global commodity prices, China demand, domestic infrastructure demand, energy costs and currency.'
+  },
+  'Realty': {
+    scope:'Listed Indian real-estate developers and property-related companies.',
+    drivers:'Home-loan rates, housing demand, launches, liquidity, urban demand and regulatory conditions.'
+  },
+  'Energy': {
+    scope:'Indian companies linked to the energy value chain.',
+    drivers:'Crude oil, gas and power prices, refining margins, regulation, demand and global energy markets.'
+  },
+  'PSU Bank': {
+    scope:'Public-sector banks listed in India.',
+    drivers:'Credit growth, deposit costs, bond yields, asset quality, policy rates and government ownership actions.'
+  },
+  'Financial Services': {
+    scope:'Indian financial-services companies including lenders and other financial intermediaries.',
+    drivers:'Interest rates, liquidity, credit growth, asset quality, market activity and regulatory changes.'
+  },
+  'Infrastructure': {
+    scope:'Thematic Nifty Infrastructure index spanning telecom, power, ports, construction, transportation, oil and other infrastructure-related industries.',
+    drivers:'Government/private capex, project awards, order books, financing costs and execution progress.'
+  },
+  'Media': {
+    scope:'Indian media, entertainment, broadcasting and related companies.',
+    drivers:'Advertising spending, subscriptions, content economics, consumer demand and regulatory developments.'
+  },
+  'Banking': {
+    scope:'Major Indian banking companies represented by Bank Nifty.',
+    drivers:'Credit growth, deposit growth, net interest margins, asset quality, policy rates and liquidity.'
+  }
+};
+
+function sectorFallbackInsight(name, sector){
+ const meta=SECTOR_META[name]||{};
+ const nifty=marketData.nifty?.pct;
+ const pct=nullableQuoteNumber(sector?.pct);
+ let relative='Relative performance is unavailable.';
+ if(pct!==null&&Number.isFinite(nifty)){
+   const gap=pct-Number(nifty);
+   relative=`It is ${gap>=0?'outperforming':'underperforming'} Nifty 50 by ${Math.abs(gap).toFixed(2)} percentage points today.`;
+ }
+ const direction=pct!==null?(pct>0?'positive':pct<0?'negative':'flat'):'mixed';
+ return {
+   what:meta.scope||`${name} represents an Indian NSE-linked sector index.`,
+   why:`The latest price action is ${direction}. ${relative} A specific news catalyst should be verified from current sources before drawing a conclusion.`,
+   how:`Use the sector reading to judge whether ${name} is participating in or diverging from the broader market; compare the move with Nifty, sector trend and volatility.`,
+   nextStep:`For investors, review existing ${name} exposure and portfolio concentration before acting; avoid chasing a one-day move and align any change with your goal, horizon and risk level.`,
+   sources:[]
+ };
+}
+
+function sectorMiniChart(points){
+ if(!Array.isArray(points)||points.length<2) return '<div class="loading-line">Intraday chart is not available for this source.</div>';
+ const vals=points.map(p=>Number(p.pct)).filter(Number.isFinite);
+ if(vals.length<2)return '<div class="loading-line">Intraday chart is not available for this source.</div>';
+ const W=390,H=125,L=28,R=8,T=8,B=18;
+ const min=Math.min(...vals,-0.2),max=Math.max(...vals,0.2),range=(max-min)||1;
+ const x=i=>L+(i/(points.length-1))*(W-L-R);
+ const y=v=>T+(max-v)/range*(H-T-B);
+ const path=points.map((p,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(Number(p.pct)).toFixed(1)}`).join(' ');
+ const area=path+` L ${x(points.length-1)} ${H-B} L ${x(0)} ${H-B} Z`;
+ const zero=(min<=0&&max>=0)?`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="#C2CCC8" stroke-dasharray="3 3"/>`:'';
+ return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+   <line class="sector-chart-grid" x1="${L}" x2="${W-R}" y1="${T}" y2="${T}"/>
+   <line class="sector-chart-grid" x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}"/>
+   ${zero}
+   <path class="sector-chart-area" d="${area}"/>
+   <path class="sector-chart-line" d="${path}"/>
+   <text x="1" y="${T+5}" font-size="8" fill="#7C878D">${max.toFixed(1)}%</text>
+   <text x="1" y="${H-B+3}" font-size="8" fill="#7C878D">${min.toFixed(1)}%</text>
+   <text x="${L}" y="${H-3}" font-size="8" fill="#7C878D">${points[0].time||''}</text>
+   <text x="${W-42}" y="${H-3}" font-size="8" fill="#7C878D">${points[points.length-1].time||''}</text>
+ </svg>`;
+}
+
+function sectorSourceLinks(payload, insight){
+ const src=[];
+ if(payload?.officialLink)src.push({title:'Official Nifty Index',url:payload.officialLink});
+ if(payload?.quoteLink)src.push({title:'Public quote',url:payload.quoteLink});
+ (insight?.sources||[]).forEach(s=>{if(s?.url)src.push({title:s.title||'Current source',url:s.url})});
+ const seen=new Set();
+ return src.filter(s=>{if(seen.has(s.url))return false;seen.add(s.url);return true}).slice(0,5)
+   .map(s=>`<a class="sector-source-link" href="${s.url}" target="_blank" rel="noopener noreferrer">↗ ${s.title}</a>`).join('');
+}
+
+async function fetchSectorMembers(name, token, payload){
+ const target=document.getElementById('sectorMembers');
+ if(!target)return;
+ try{
+   const r=await fetch(`${API_BASE}/api/sector-constituents?name=${encodeURIComponent(name)}`,{cache:'no-store'});
+   const j=await r.json();
+   if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+   const area=document.getElementById('sectorMembers');if(!area)return;
+   area.replaceChildren();
+   if(j.ok&&Array.isArray(j.items)&&j.items.length){
+     const note=document.createElement('div');note.textContent=`${j.items.length} stocks in published constituent file · ${j.sourceDate||'reference date not supplied'}. The list can change on rebalancing.`;area.appendChild(note);
+     const list=document.createElement('div');list.className='sector-members';
+     j.items.forEach(x=>{
+       const chip=document.createElement('button');chip.type='button';chip.className='sector-member constituent-watch';
+       chip.textContent=x.symbol+(x.name?' · '+x.name:'')+'  ↗';
+       chip.title='Watch '+(x.name||x.symbol)+' on the Home tab';
+       chip.setAttribute('aria-label','Watch '+(x.name||x.symbol)+' in Home');
+       chip.addEventListener('click',()=>watchSectorConstituent(x.symbol,x.name));
+       list.appendChild(chip);
+     });area.appendChild(list);
+     const hint=document.createElement('div');hint.className='ss';hint.style.marginTop='7px';
+     hint.textContent='Tap any company to open Home → Choose what to watch, with that NSE ticker selected.';
+     area.appendChild(hint);
+   }else area.textContent=`Constituent list could not be loaded (${j.error||'source unavailable'}). Open the official index page below for its current Index Constituent download.`;
+   if(j.sourceUrl){const a=document.createElement('a');a.href=j.sourceUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Open official NSE constituent file ↗';area.appendChild(document.createElement('br'));area.appendChild(a)}
+ }catch(e){if(activeDetailKind==='sector'&&activeDetailToken===token){const a=document.getElementById('sectorMembers');if(a)a.textContent='Company list is temporarily unavailable. You can check the official NSE index page below.'}}
+}
+async function fetchSectorNarrative(name,token){
+ try{
+   const c=new AbortController(),timer=setTimeout(()=>c.abort(),11000);
+   let response;
+   try{response=await fetch(`${API_BASE}/api/sector-insight`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name}),signal:c.signal})}
+   finally{clearTimeout(timer)}
+   if(!response.ok)return;
+   const j=await response.json();
+   if(!j?.ok||activeDetailKind!=='sector'||activeDetailToken!==token)return;
+   const labels=[['what','What'],['why','Why today'],['how','How to interpret'],['nextStep','Next step for investors']];
+   const cards=document.querySelectorAll('#detailBody .sector-insight-grid .insight-card p');
+   labels.forEach(([key],i)=>{if(cards[i]&&typeof j.insight?.[key]==='string'&&j.insight[key].length<650)cards[i].textContent=j.insight[key]});
+ }catch(_){/* The deterministic explanation stays visible. */}
+}
+
+function sectorDirectorySection(name){
+ const infra=name==='Infrastructure';
+ return `<div class="detailsection"><h4>${infra?'Infrastructure · 11 industry categories':'Industry groups & companies'}</h4>
+ <div class="sector-dir-note">${infra?'Explore the industries represented in Nifty Infrastructure. Open a category to view its listed companies when available.':'Explore companies in '+escText(name)+'.'} Tap a company to open its chart, Market Pulse and 20-day history on Home.</div>
+ <div id="sectorBreakdown" class="sector-directory">${infra?'<div class="sector-dir-note">Explore the categories below.</div>':'<div class="sector-dir-note">Getting the company list…</div>'}</div></div>`;
+}
+// NSE Infrastructure's 11 broad industry categories are stable navigation headings.
+// Companies are placed into a category only when published classifications confirm it.
+const INFRASTRUCTURE_INDUSTRIES=[
+ 'Oil, Gas & Consumable Fuels','Telecommunication','Construction','Power',
+ 'Construction Materials','Capital Goods','Services','Healthcare',
+ 'Automobile and Auto Components','Consumer Services','Realty'
+];
+function canonicalInfrastructureIndustry(label){
+ const key=String(label||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const aliases={
+  oilgasconsumablefuels:'Oil, Gas & Consumable Fuels',
+  oilgasandconsumablefuels:'Oil, Gas & Consumable Fuels',
+  telecommunication:'Telecommunication',telecommunications:'Telecommunication',
+  construction:'Construction',power:'Power',constructionmaterials:'Construction Materials',
+  capitalgoods:'Capital Goods',services:'Services',healthcare:'Healthcare',
+  automobileandautocomponents:'Automobile and Auto Components',
+  automobileautocomponents:'Automobile and Auto Components',
+  consumerservices:'Consumer Services',realty:'Realty'
+ };
+ return aliases[key]||null;
+}
+function infrastructureDirectoryView(raw){
+ const verified=raw?.ok===true;
+ const groups=INFRASTRUCTURE_INDUSTRIES.map(name=>({name,items:[]}));
+ const map=new Map(groups.map(g=>[g.name,g]));
+ const other=[];const seen=new Set();let assigned=0;
+ const provided=Array.isArray(raw?.groups)?raw.groups:Array.isArray(raw?.categories)?raw.categories:[];
+ provided.forEach(group=>{
+  const groupName=canonicalInfrastructureIndustry(group?.name);
+  (Array.isArray(group?.items)?group.items:[]).forEach(stock=>{
+   const symbol=String(stock?.symbol||'').trim().toUpperCase();
+   if(!/^[A-Z0-9&-]{1,25}$/.test(symbol)||seen.has(symbol))return;
+   seen.add(symbol);
+   const item={symbol,name:String(stock.name||symbol),basicIndustry:stock.basicIndustry||null};
+   if(groupName){map.get(groupName).items.push(item);assigned++;}
+   else other.push(item);
+  });
+ });
+ if(other.length)groups.push({name:'Other index companies',items:other});
+ return {ok:true,groups,total:seen.size,classifiedCount:assigned,
+  awaitingCompanies:!verified||seen.size===0,completeClassification:verified&&seen.size>0&&assigned===seen.size,
+  saved:raw?.saved===true,sourceLabel:raw?.sourceLabel||raw?.source||'',
+  officialLink:raw?.officialLink||'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure'};
+}
+let sectorBreakdownState=null;
+function renderSectorDirectory(token){
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ const container=document.getElementById('sectorBreakdown');
+ if(!container||!sectorBreakdownState||sectorBreakdownState.token!==token)return;
+ const {name,data:sourceData}=sectorBreakdownState;
+ const infra=name==='Infrastructure';
+ const data=infra?infrastructureDirectoryView(sourceData):sourceData;
+ container.replaceChildren();
+ const main=document.createElement('div');main.className='sector-dir-top';
+ const label=document.createElement('span');label.textContent=infra?
+   (data.total?`11 industries · ${data.total} published companies`:'11 industries · Company details will appear when available'):
+   (data.ok?`${data.total} companies · ${data.groups.length} ${data.groups.length===1?'industry group':'industry groups'}`:'Company information is temporarily unavailable');
+ const stamp=document.createElement('span');stamp.textContent=data.ok&&!data.awaitingCompanies?(data.sourceLabel||'NSE Indices')+(data.saved?' · Last available list':''):'';
+ main.append(label,stamp);container.appendChild(main);
+ if(data.ok&&Array.isArray(data.groups)&&data.groups.length){
+   const hasCompanies=data.groups.some(g=>g?.items?.length);
+   if(infra&&!hasCompanies){const info=document.createElement('div');info.className='sector-dir-note';info.textContent='Industry names are shown below. Company lists will be shown when the latest index membership is available.';container.appendChild(info)}
+   const input=document.createElement('input');input.type='search';input.className='sector-dir-search';input.placeholder='Find company or ticker';input.setAttribute('aria-label',`Search ${name} companies`);
+   if(hasCompanies)container.appendChild(input);
+   const groups=document.createElement('div');groups.className='sector-dir-groups';
+   let expanded=false;
+   data.groups.forEach(group=>{
+     if(!group?.items?.length&&!infra)return;
+     const details=document.createElement('details');details.open=!expanded;expanded=true;
+     const head=document.createElement('summary');
+     const groupName=document.createElement('span');groupName.textContent=group.name;
+     const count=document.createElement('small');count.textContent=group.items.length?
+       `${group.items.length} ${group.items.length===1?'stock':'stocks'}`:
+       (data.completeClassification?'No current constituents':'Details pending');
+     head.append(groupName,count);details.appendChild(head);
+     const makeWatchButton=stock=>{
+       const button=document.createElement('button');button.type='button';button.dataset.search=(stock.symbol+' '+(stock.name||'')+' '+(stock.basicIndustry||'')).toLowerCase();
+       const ticker=document.createElement('strong');ticker.textContent=stock.symbol;
+       const text=document.createElement('span');text.textContent=stock.name||'View stock';
+       button.append(ticker,text);button.setAttribute('aria-label',`Watch ${stock.name||stock.symbol} on Home`);
+       button.addEventListener('click',()=>watchSectorConstituent(stock.symbol,stock.name));return button;
+     };
+     const basic=new Map();
+     group.items.forEach(stock=>{
+       const k=stock.basicIndustry||'Other companies';if(!basic.has(k))basic.set(k,[]);basic.get(k).push(stock);
+     });
+     if(infra&&!group.items.length){
+       const note=document.createElement('div');note.className='sector-dir-note';note.style.padding='0 12px 12px';
+       note.textContent=data.completeClassification?'There are no current index companies assigned to this category.':'The current company list for this industry is not available yet.';
+       details.appendChild(note);
+     }else if(basic.size>1&&group.items.some(x=>x.basicIndustry)){
+       const subGroups=document.createElement('div');subGroups.className='sector-dir-groups';subGroups.style.padding='0 10px 12px';
+       [...basic].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([industry,items])=>{
+         const sub=document.createElement('details');sub.open=false;
+         const subHead=document.createElement('summary');
+         const n=document.createElement('span');n.textContent=industry;
+         const c=document.createElement('small');c.textContent=`${items.length} ${items.length===1?'stock':'stocks'}`;
+         subHead.append(n,c);sub.appendChild(subHead);
+         const memberBox=document.createElement('div');memberBox.className='sector-dir-items';items.forEach(x=>memberBox.appendChild(makeWatchButton(x)));
+         sub.appendChild(memberBox);subGroups.appendChild(sub);
+       });
+       details.appendChild(subGroups);
+     }else{
+       const members=document.createElement('div');members.className='sector-dir-items';group.items.forEach(x=>members.appendChild(makeWatchButton(x)));
+       details.appendChild(members);
+     }
+     groups.appendChild(details);
+   });
+   container.appendChild(groups);
+   if(hasCompanies)input.addEventListener('input',()=>{
+     const needle=input.value.trim().toLowerCase();
+     groups.querySelectorAll('details').forEach(detail=>{
+       let found=0;
+       detail.querySelectorAll('button[data-search]').forEach(btn=>{
+         const matches=btn.dataset.search.includes(needle);
+         btn.style.display=matches?'':'none';if(matches)found++;
+       });
+       if(detail.parentElement===groups){detail.style.display=found?'':'none';if(needle&&found)detail.open=true}
+       else if(needle&&found)detail.open=true;
+     });
+   });
+   const note=document.createElement('div');note.className='sector-dir-note';note.textContent=infra?
+     'These are industry categories within Nifty Infrastructure, not separate live indices. Stocks may also belong to other NSE indices.':
+     'A company can belong to more than one index. Each company appears only once within this view. Industry groups are not independently traded indices.';
+   container.appendChild(note);
+ }else{
+   const note=document.createElement('div');note.className='sector-dir-note';
+   note.textContent='The latest constituent list is not available. Check the NSE index page for its published company list.';
+   container.appendChild(note);
+ }
+ const links=document.createElement('div');links.className='sector-dir-links';
+ const ref=document.createElement('a');ref.href=data.officialLink||'https://www.niftyindices.com/';ref.target='_blank';ref.rel='noopener noreferrer';ref.textContent='View official index details ↗';links.appendChild(ref);
+ container.appendChild(links);
+}
+async function loadSectorDirectory(name,token){
+ const cacheKey='mm9_sector_members_'+name;
+ const officialLink=name==='Infrastructure'?
+   'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure':
+   'https://www.niftyindices.com/indices/equity/sectoral-indices';
+ let cached=null;
+ try{const saved=JSON.parse(localStorage.getItem(cacheKey)||'null');
+   if(saved?.data?.ok&&Array.isArray(saved.data.groups||saved.data.categories)&&Date.now()-saved.savedAt<45*86400000)
+     cached={...saved.data,saved:true};
+ }catch(_){}
+ // Show a saved valid snapshot immediately, or stable category headings if it has not been fetched yet.
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ sectorBreakdownState={name,token,data:cached||{ok:false,officialLink}};
+ renderSectorDirectory(token);
+ if(!API_BASE)return;
+ async function fetchDirectory(path){
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),11000);
+   try{const r=await fetch(`${API_BASE}${path}`,{signal:controller.signal,cache:'no-store'});
+     if(!r.ok)return null;
+     const data=await r.json();
+     if(data?.ok&&Array.isArray(data.groups||data.categories))return data;
+   }catch(_){}finally{clearTimeout(timer)}
+   return null;
+ }
+ let latest=null;
+ if(name==='Infrastructure'){
+   // Both data routes describe the same published index; prefer the one with more classified companies.
+   const [general,specific]=await Promise.all([
+     fetchDirectory('/api/sector-breakdown?name=Infrastructure'),
+     fetchDirectory('/api/infrastructure-breakdown')
+   ]);
+   const score=j=>j?infrastructureDirectoryView(j).classifiedCount:-1;
+   latest=score(specific)>score(general)?specific:(general||specific);
+ }else{
+   latest=await fetchDirectory('/api/sector-breakdown?name='+encodeURIComponent(name));
+ }
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ if(latest){
+   latest.officialLink=latest.officialLink||officialLink;
+   const validCount=name==='Infrastructure'?infrastructureDirectoryView(latest).total:
+     (Array.isArray(latest.groups)?latest.groups.reduce((sum,g)=>sum+(g?.items?.length||0),0):0);
+   if(validCount){
+     try{localStorage.setItem(cacheKey,JSON.stringify({data:latest,savedAt:Date.now()}))}catch(_){}
+   }
+   sectorBreakdownState={name,token,data:latest};
+ }else if(!cached){
+   sectorBreakdownState={name,token,data:{ok:false,officialLink}};
+ }
+ renderSectorDirectory(token);
+}
+async function openSectorDetail(name){
+ const listItem=(marketData.sectors||[]).find(x=>x[0]===name);
+ const fallbackSector={name,price:listItem?.[1],pct:listItem?.[2]};
+ const fallback=sectorFallbackInsight(name,fallbackSector);
+ showSheet(`${name} Sector`,'Indian market sector overview',
+   `<div class="detailgrid">
+      ${detailCell('Index level',fmtNum(fallbackSector.price),cls(fallbackSector.pct))}
+      ${detailCell('Today',fmtPct(fallbackSector.pct),cls(fallbackSector.pct))}
+    </div>
+    <div class="detailsection"><h4>Sector Intelligence</h4><div class="loading-line">Loading sector metrics, trend and current explanation…</div></div>
+    <div class="sector-insight-grid">
+      <div class="insight-card"><h5>What</h5><p>${fallback.what}</p></div>
+      <div class="insight-card"><h5>Why</h5><p>${fallback.why}</p></div>
+      <div class="insight-card"><h5>How to interpret</h5><p>${fallback.how}</p></div>
+      <div class="insight-card"><h5>Next step</h5><p>${fallback.nextStep}</p></div>
+    </div>
+    ${sectorDirectorySection(name)}
+    <div class="detailsection"><h4>Index documentation</h4><div class="ss">Sector descriptions are available independently of live quote coverage.</div><div class="sector-source-list"><a class="sector-source-link" href="https://www.niftyindices.com/indices/equity/sectoral-indices" target="_blank" rel="noopener noreferrer">↗ Official NSE sectoral indices</a></div></div>`);
+
+ activeDetailKind='sector';const sectorToken=activeDetailToken;
+ sectorBreakdownState={name,token:sectorToken,data:{ok:false,officialLink:name==='Infrastructure'?'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure':'https://www.niftyindices.com/indices/equity/sectoral-indices'}};
+ renderSectorDirectory(sectorToken);
+ loadSectorDirectory(name,sectorToken);
+ try{
+   let payload=null;
+   if(API_BASE){
+     const r=await fetch(`${API_BASE}/api/sector?name=${encodeURIComponent(name)}`,{cache:'no-store'});
+     if(r.ok)payload=await r.json();
+   }
+   if(!payload?.ok)throw new Error(payload?.error||'Sector data unavailable');
+
+   let insight=fallback;
+   // Render metrics first; AI narrative and official constituent downloads are independent slow requests.
+
+   const d=payload.sector||{};
+   const rel=nullableQuoteNumber(d.pct)!==null&&nullableQuoteNumber(marketData.nifty?.pct)!==null
+      ? Number(d.pct)-Number(marketData.nifty.pct):null;
+   const dayRange=(nullableQuoteNumber(d.high)!==null&&nullableQuoteNumber(d.low)!==null)
+      ? `${fmtNum(d.low)} – ${fmtNum(d.high)}`:'--';
+
+   const body=`
+     <div class="detailgrid">
+       ${detailCell('Index level',fmtNum(d.price),cls(d.pct))}
+       ${detailCell('Today',fmtPct(d.pct),cls(d.pct))}
+       ${detailCell('Vs Nifty',Number.isFinite(rel)?`${rel>=0?'+':''}${rel.toFixed(2)} pp`:'--',Number.isFinite(rel)?cls(rel):'')}
+       ${detailCell('5-day',nullableQuoteNumber(payload.return5d)!==null?fmtPct(payload.return5d):'--',cls(payload.return5d))}
+       ${detailCell('1-month',nullableQuoteNumber(payload.return1m)!==null?fmtPct(payload.return1m):'--',cls(payload.return1m))}
+       ${detailCell('Day range',dayRange)}
+     </div>
+     <div class="sector-chart-wrap">
+       <div style="font-size:10px;font-weight:900;margin-bottom:6px">Intraday sector trend</div>
+       ${sectorMiniChart(d.timeline||[])}
+       <div id="sectorChartReadout" class="chart-readout">Tap or hover over the chart to see its percentage value.</div>
+     </div>
+     <div class="detailsection">
+       <h4>Scope & key drivers</h4>
+       <div style="font-size:10.5px;line-height:1.55">${payload.scope||fallback.what}</div>
+       <div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:7px"><b>Key drivers:</b> ${payload.drivers||SECTOR_META[name]?.drivers||'Sector-specific demand, earnings and macro conditions.'}</div>
+       <span class="source-tag">${payload.dataAsOf||marketData.timestamp||'Latest available'}</span>
+     </div>
+     <div class="sector-insight-grid">
+       <div class="insight-card"><h5>What</h5><p>${insight.what}</p></div>
+       <div class="insight-card"><h5>Why today</h5><p>${insight.why}</p></div>
+       <div class="insight-card"><h5>How to interpret</h5><p>${insight.how}</p></div>
+       <div class="insight-card"><h5>Next step for investors</h5><p>${insight.nextStep}</p></div>
+     </div>
+     ${sectorDirectorySection(name)}
+     <div class="detailsection">
+       <h4>Public sources</h4>
+       <div style="font-size:9.5px;color:var(--muted);line-height:1.45">You can verify index details, companies and prices through the sources below. Quotes may be delayed. </div>
+       <div class="sector-source-list">${sectorSourceLinks(payload,insight)}</div>
+     </div>`;
+   if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
+   document.getElementById('detailBody').innerHTML=body;
+   renderSectorDirectory(sectorToken);
+   const sectorSvg=document.querySelector('#detailBody .sector-chart-wrap svg');
+   if(sectorSvg && Array.isArray(d.timeline)&&d.timeline.length>1){
+     const vals=d.timeline.map(p=>Number(p.pct)).filter(Number.isFinite);
+     const miniMax=Math.max(...vals,0.2),miniMin=Math.min(...vals,-0.2),miniRange=miniMax-miniMin||1;
+     bindChartHover(sectorSvg,d.timeline,{width:390,x:(p,i)=>28+i/(d.timeline.length-1)*(390-28-8),y:p=>8+(miniMax-Number(p.pct))/miniRange*(125-8-18),label:p=>`${p.time||''} IST · ${p.price!=null?fmtNum(Number(p.price))+' points · ':''}${fmtPct(Number(p.pct))}`},'sectorChartReadout');
+   }
+
+   fetchSectorNarrative(name,sectorToken);
+ }catch(e){
+   if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
+   const current=document.getElementById('detailBody');
+   current.insertAdjacentHTML('beforeend',
+     `<div class="alert amber"><b>Some market details are not available right now.</b><br/>You can still explore the industry categories and check the published index information.</div>`);
+ }
+}
+
+
+
+let silverQuote=null,silverLastCheckedMs=0,silverFetchInFlight=false,silverDetailOpen=false;
+let cityGold=null,selectedGoldCity='Mumbai',cityFetchInFlight=false,cityFetchedAt=0,cityError='';
+const INDIAN_GOLD_CITIES=['Mumbai','Thane','Delhi','Chennai','Bengaluru','Kolkata','Hyderabad','Pune','Ahmedabad','Surat','Jaipur','Lucknow','Kochi','Indore','Nagpur','Vadodara','Chandigarh','Patna'];
+const cityUrl=name=>`https://www.goodreturns.in/gold-rates/${({Bengaluru:'bangalore'}[name]||name.toLowerCase())}.html`;
+function escText(t){return String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function sgxQuote(){return marketData.global?.sgx}
+function renderSGX(){
+ const q=sgxQuote(),p=q?.price,pct=q?.pct;
+ const ov=document.getElementById('ovSGX'),ch=document.getElementById('ovSGXPct');
+ if(ov){ov.textContent=Number.isFinite(p)?fmtNum(p):'—';ov.className='v '+cls(pct)}
+ if(ch)ch.textContent=Number.isFinite(pct)?fmtPct(pct)+' · STI':'Singapore · quote unavailable';
+ const sg=document.getElementById('sgxSession');if(sg)sg.textContent=sgxSessionStatus()+(Number.isFinite(p)?' · STI '+fmtNum(p):'');
+ const e=document.getElementById('sgxMarket'),dot=document.getElementById('sgxDot');
+ if(e){e.textContent=fmtPct(pct);e.className='sv '+cls(pct)}
+ if(dot)dot.className='dot '+(pct>0?'g':pct<0?'r':'a');
+}
+function openSGXDetail(){
+ const q=sgxQuote();
+ const date=q?.epoch?goldDate(q.epoch*1000):'Unavailable';
+ const body=`<div class="detailgrid">
+  ${detailCell('STI index level',q?.price==null?'—':fmtNum(q.price),cls(q?.pct))}
+  ${detailCell('Move',fmtPct(q?.pct),cls(q?.pct))}
+  ${detailCell('Singapore session',sgxSessionStatus())}
+  ${detailCell('Quote as of',date)}
+ </div><div class="detailsection"><h4>SGX market overview</h4>${detailRows({
+   'Previous close':q?.prev==null?null:fmtNum(q.prev),'Open':q?.open==null?null:fmtNum(q.open),
+   'Session high':q?.high==null?null:fmtNum(q.high),'Session low':q?.low==null?null:fmtNum(q.low),
+   'Source':'Yahoo Finance · ^STI (public delayed quote)'
+ })}
+ <div class="ss">Singapore securities normal trading: 09:00–12:00 and 13:00–17:00 SGT, with pre-open and closing routines. Public holidays and exceptional sessions are not automatically verified.</div></div>
+ <div class="detailsection"><h4>SGX vs GIFT Nifty</h4><div class="ss">The STI tracks Singapore equities. The former SGX Nifty contracts moved to the NSE IX GIFT Nifty arrangement in 2023; these must not be confused or treated as the same index.</div><div class="gold-links"><a href="https://www.sgx.com/securities/trading" target="_blank" rel="noopener noreferrer">SGX official trading hours</a><a href="https://sg.finance.yahoo.com/quote/%5ESTI/" target="_blank" rel="noopener noreferrer">STI public quote</a></div></div>`;
+ showSheet('Singapore Market · SGX STI','Singapore equities, separate from GIFT Nifty',body);
+}
+function renderMetalOverviews(){
+ const g=document.getElementById('ovGold'),s=document.getElementById('ovSilver');
+ if(g)g.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+ if(s)s.textContent=goldMoney(silverQuote?.kind==='india-daily-benchmark'?silverQuote.priceInrPerGram:null,0);
+ const a=document.getElementById('silverPeek'),b=document.getElementById('silverKilo'),st=document.getElementById('silverPeekStatus');
+ if(a)a.textContent=goldMoney(silverQuote?.kind==='india-daily-benchmark'?silverQuote.priceInrPerGram:null,2);
+ if(b)b.textContent=goldMoney(silverQuote?.kind==='india-daily-benchmark'?silverQuote.priceInrPerKg:null,0);
+ if(st)st.textContent=silverQuote?.kind==='india-daily-benchmark'?`All India Bullion · ${silverQuote.publishedDate} · Daily India reference, not intraday`:(silverFetchInFlight?'Checking Indian benchmark…':'India silver benchmark unavailable');
+ updateMetalsSession();
+}
+function updateMetalsSession(){
+ const g=document.getElementById('goldSession'),s=document.getElementById('silverSession');
+ if(g)g.textContent=(goldQuote?goldMoney(goldRateFor(GOLD_GRADES[4]),0)+'/g · ':'')+metalSessionLabel(goldQuote);
+ if(s)s.textContent=(silverQuote?goldMoney(silverQuote.priceInrPerGram,0)+'/g · ':'')+metalSessionLabel(silverQuote);
+}
+async function refreshSilver(force=false){
+ if(silverFetchInFlight||!API_BASE)return;
+ if(!force&&Date.now()-silverLastCheckedMs<1800000)return;
+ silverLastCheckedMs=Date.now();silverFetchInFlight=true;renderMetalOverviews();
+ const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),14000);
+ try{
+  const r=await fetch(`${API_BASE}/api/silver`,{cache:'no-store',signal:ctrl.signal});
+  const j=await r.json();if(!r.ok||!j.ok||j.kind!=='india-daily-benchmark'||!Number.isFinite(Number(j.priceInrPerKg)))throw Error(j.error||'India source unavailable');
+  silverQuote=j;
+  try{localStorage.setItem('mm9IndiaSilverBenchmark',JSON.stringify({at:Date.now(),data:j}))}catch(_){}
+ }catch(e){
+  if(!silverQuote){try{const x=JSON.parse(localStorage.getItem('mm9IndiaSilverBenchmark')||'null');if(x?.data?.kind==='india-daily-benchmark'&&Date.now()-x.at<7*86400000)silverQuote=x.data}catch(_){}}
+  const st=document.getElementById('silverPeekStatus');if(st)st.textContent=silverQuote?`India benchmark unavailable · last saved date ${silverQuote.publishedDate}`:'India silver source unavailable; see publisher link';
+ }finally{clearTimeout(t);silverFetchInFlight=false;renderMetalOverviews();if(activeDetailKind==='silver')renderSilverDetail();}
+}
+function silverDetailBody(){
+ if(!silverQuote || silverQuote.kind!=='india-daily-benchmark')return '<div class="detailsection"><h4>India silver benchmark unavailable</h4><div class="ss">No India reference price was verified; we do not substitute an XAG/USD conversion.</div><button class="btn primary" onclick="refreshSilver(true)">Retry Indian rate</button><p><a href="https://allindiabullion.com/benchmark" target="_blank" rel="noopener noreferrer">Check published Indian benchmark ↗</a></p></div>';
+ return `<div class="detailgrid">${detailCell('Silver · 999 / gram',goldMoney(silverQuote.priceInrPerGram))}${detailCell('Silver · 999 / kg',goldMoney(silverQuote.priceInrPerKg,0))}</div>
+ <div class="detailsection"><h4>Source &amp; date</h4>
+ <div class="ss"><b>All India Bullion — India-wide daily reference</b><br>Rate date: ${escText(silverQuote.publishedDate)} · Recorded at 03:00 IST<br>Checked: ${goldDate(silverQuote.checkedAt)}<br>Rates exclude GST and other retail charges. This is not a streaming MCX futures quote or a jeweller’s confirmed selling price.</div>
+ <div class="gold-links"><a href="${silverQuote.sourceUrl||'https://allindiabullion.com/benchmark'}" target="_blank" rel="noopener noreferrer">↗ Published Indian benchmark</a><a href="https://www.ibjarates.com/" target="_blank" rel="noopener noreferrer">↗ IBJA reference (verify separately)</a></div></div>`;
+}
+function renderSilverDetail(){if(activeDetailKind==='silver'&&silverDetailOpen&&document.getElementById('detailSheet').classList.contains('open')){const sheet=document.getElementById('detailSheet'),p=sheet.scrollTop;document.getElementById('detailBody').innerHTML=silverDetailBody();sheet.scrollTop=p;}}
+function openSilverDetail(){showSheet('Silver Rates · India 999','Published Indian bullion benchmark',silverDetailBody());activeDetailKind='silver';silverDetailOpen=true;goldDetailOpen=false;if(!silverQuote||Date.now()-silverLastCheckedMs>1800000)refreshSilver(true);}
+function cityRateRows(){
+ if(!cityGold?.ok){return `<div class="gold-note"><b>Published city rates unavailable</b><br>${escText(cityError||'Select a city to check its published retail benchmark.')}. No fabricated city-specific prices are displayed.</div>`}
+ const found=cityGold.rates||{};
+ const rows=GOLD_GRADES.map(g=>{
+   const v=found[g.label],real=cityGold.publishedKarat?.includes(g.label);
+   return `<tr><td><b>${g.label}</b><br><small>${real?(cityGold.gstIncluded?'City API · GST included':'Published'):'Calculated · not shop quote'}</small></td><td>${goldMoney(v)}</td><td>${goldMoney(v*10,0)}</td></tr>`;
+ }).join('');
+ const dt=cityGold.publishedDate?`Rate date: ${escText(cityGold.publishedDate)}`:'Rate date not verified';
+ const dated=cityGold.publishedDate&&cityGold.publishedDate!==dateIST();
+ return `<div class="gold-note">${dated?'<b>Older published rate — not live today.</b><br>':''}${dt} · Retrieved ${goldDate(cityGold.checkedAt)}<br>${cityGold.gstIncluded?'18K/22K/24K include GST; 20K/23K are calculated. Making charges excluded.':'Taxes and making charges may be extra.'} City reference rates are not quotes from individual shops.</div><div style="overflow:auto"><table class="city-price-table"><thead><tr><th>Purity</th><th>₹/g</th><th>₹/10g</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function cityRatesPanel(){
+ const options=INDIAN_GOLD_CITIES.map(c=>`<option value="${escText(c)}" ${c===selectedGoldCity?'selected':''}>${escText(c)}</option>`).join('');
+ return `<div class="detailsection"><h4>Indian city jewellery-rate benchmark</h4>
+ <div class="city-controls"><select aria-label="Indian city" id="goldCitySelect" onchange="selectGoldCity(this.value)">${options}</select><button class="btn soft" onclick="refreshCityGold(true)">Check city</button></div>
+ <div id="cityRateData">${cityFetchInFlight?'<div class="loading-line">Checking publisher’s city rates…</div>':cityRateRows()}</div>
+ <div class="city-rate-note"><b>City rate basis:</b> When the city API is configured, provider-supplied 18K/22K/24K references include GST; 20K/23K are calculated equivalents, not jeweller quotations. Making charges, gemstones and shop premiums are extra. If the city API is unavailable, open the publisher link to verify rates directly.</div>
+ <div class="gold-links"><a id="cityRateSource" href="${cityUrl(selectedGoldCity)}" target="_blank" rel="noopener noreferrer">Verify ${escText(selectedGoldCity)} published rate ↗</a><a href="https://www.ibja.co/" target="_blank" rel="noopener noreferrer">IBJA national benchmark ↗</a></div></div>`;
+}
+function selectGoldCity(value){
+ if(!INDIAN_GOLD_CITIES.includes(value))return;
+ selectedGoldCity=value;cityGold=null;cityError='';
+ const node=document.getElementById('cityRateData');if(node)node.innerHTML=cityRateRows();
+ const a=document.getElementById('cityRateSource');if(a){a.href=cityUrl(value);a.textContent='Verify '+value+' published rate ↗'}
+ // Only the Check city button requests the city provider.
+}
+async function refreshCityGold(force=false){
+ if(cityFetchInFlight||!API_BASE)return;
+ if(!force&&cityGold?.city===selectedGoldCity&&Date.now()-cityFetchedAt<60*60*1000)return;
+ cityFetchInFlight=true;cityError='';
+ const city=selectedGoldCity;
+ let el=document.getElementById('cityRateData');if(el)el.innerHTML='<div class="loading-line">Checking published '+escText(city)+' retail benchmark…</div>';
+ const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9500);
+ try{
+  const r=await fetch(`${API_BASE}/api/city-gold?city=${encodeURIComponent(city)}`,{cache:'no-store',signal:ctl.signal});
+  const j=await r.json();if(!r.ok||!j.ok)throw Error(j.detail||j.error||'Unavailable');
+  if(selectedGoldCity!==city)return;
+  cityGold=j;cityFetchedAt=Date.now();try{localStorage.setItem("mm9City_"+city,JSON.stringify(j))}catch(_){}
+ }catch(e){if(selectedGoldCity===city){cityGold=null;try{const prior=JSON.parse(localStorage.getItem('mm9City_'+city)||'null');if(prior?.ok&&prior.city===city){cityGold=prior;cityError='Live check failed; displaying last saved dated quote.'}}catch(_){}if(!cityGold)cityError=String(e?.message||'City data unavailable')+'. Open the source page to verify the latest published rate.'}}
+ finally{
+  clearTimeout(t);cityFetchInFlight=false;
+  el=document.getElementById('cityRateData');if(el)el.innerHTML=cityRateRows();
+ }
+}
+
+const GOLD_GRADES=[{label:'18K',fineness:750},{label:'20K',fineness:833},{label:'22K',fineness:916},{label:'23K',fineness:958},{label:'24K',fineness:999}];
+function goldMoney(n, decimals=2){return n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n))? '₹'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:decimals,maximumFractionDigits:decimals}):'—'}
+function goldDate(v){if(!v)return 'Not supplied';const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(d)+' IST':'Not supplied'}
+function goldSourceAge(){return goldQuote?.kind==='india-daily-benchmark' ? `Indian reference · ${goldQuote.publishedDate}` : 'Indian rate unavailable';}
+function goldRateFor(grade,premium=0){
+ const rate=goldQuote?.kind==='india-daily-benchmark'?Number(goldQuote.spot24kInrPerGram):null;
+ return Number.isFinite(rate)?rate*(grade.fineness/999)*(1+premium/100):null;
+}
+function renderGoldPeek(){
+ const e22=document.getElementById('gold22Peek'),e24=document.getElementById('gold24Peek'),st=document.getElementById('goldPeekStatus');
+ if(!e22||!e24||!st)return;
+ e22.textContent=goldMoney(goldRateFor(GOLD_GRADES[2]),0);e24.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+ const over=document.getElementById('ovGold');if(over)over.textContent=goldMoney(goldRateFor(GOLD_GRADES[4]),0);
+ st.textContent=goldQuote?.kind==='india-daily-benchmark'?`All India Bullion · ${goldQuote.publishedDate} · India daily reference`:(goldFetchInFlight?'Checking Indian rates…':'Indian benchmark unavailable · Tap for sources');
+}
+async function refreshGold(force=false){
+ if(goldFetchInFlight||!API_BASE)return;
+ if(!force&&Date.now()-goldLastCheckedMs<1800000)return;
+ goldLastCheckedMs=Date.now();goldFetchInFlight=true;renderGoldPeek();
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),14000);
+ try{
+  const res=await fetch(`${API_BASE}/api/gold`,{cache:'no-store',signal:c.signal});
+  const data=await res.json();
+  if(!res.ok||!data.ok||data.kind!=='india-daily-benchmark'||!Number.isFinite(Number(data.spot24kInrPerGram)))throw Error(data.error||`India endpoint HTTP ${res.status}`);
+  goldQuote=data;
+  try{localStorage.setItem('mm9IndiaGoldBenchmark',JSON.stringify({at:Date.now(),data}))}catch(_){}
+ }catch(err){
+  if(!goldQuote){try{const saved=JSON.parse(localStorage.getItem('mm9IndiaGoldBenchmark')||'null');if(saved?.data?.kind==='india-daily-benchmark'&&Date.now()-saved.at<7*86400000)goldQuote=saved.data;}catch(_){}}
+  const st=document.getElementById('goldPeekStatus');if(st)st.textContent=goldQuote?`India benchmark unavailable · last saved rate ${goldQuote.publishedDate}`:`India source unavailable · ${String(err.message||'see publisher')}`;
+ }finally{clearTimeout(t);goldFetchInFlight=false;renderGoldPeek();renderMetalOverviews();if(activeDetailKind==='gold')renderGoldDetail();}
+}
+function selectGoldView(next){goldView=next==='jewellery'?'jewellery':'spot';renderGoldDetail()}
+function setGoldPremium(value){
+ goldPremium=Math.min(25,Math.max(0,Number(value)||0));
+ const label=document.getElementById('goldPremiumText');if(label)label.textContent=goldPremium.toFixed(0)+'%';
+ for(const g of GOLD_GRADES){
+   const row=document.querySelector(`[data-gold-grade="${g.label}"]`);
+   if(!row)continue;
+   const p=goldRateFor(g,goldPremium);
+   const cells=row.querySelectorAll('td');
+   if(cells[1])cells[1].textContent=goldMoney(p);
+   if(cells[2])cells[2].textContent=goldMoney(p*10,0);
+ }
+}
+function goldLiveDetailBody(){
+ if(!goldQuote || goldQuote.kind!=='india-daily-benchmark')return `<div class="detailsection"><h4>Indian gold benchmark unavailable</h4><div class="ss">We could not verify an India-specific reference rate. An international XAU conversion is intentionally not shown.</div><button class="btn primary" onclick="refreshGold(true)">Retry India rate</button><div class="gold-links"><a href="https://allindiabullion.com/benchmark" target="_blank" rel="noopener noreferrer">↗ View India benchmark</a><a href="https://www.ibjarates.com/" target="_blank" rel="noopener noreferrer">↗ IBJA benchmark</a></div></div>${cityRatesPanel()}`;
+ const rates=GOLD_GRADES.map(g=>{const p=goldRateFor(g,goldView==='jewellery'?goldPremium:0);return `<tr data-gold-grade="${g.label}"><td><b>${g.label}</b><small>Purity ${g.fineness}/1000${g.label==='24K'?' · source rate':' · derived'}</small></td><td><strong>${goldMoney(p)}</strong></td><td>${goldMoney(p*10,0)}</td></tr>`}).join('');
+ return `
+  <div class="detailgrid">
+   ${detailCell('India gold · 24K / 10g',goldMoney(goldQuote.gold24kPer10g,0))}
+   ${detailCell('India bullion source','Daily benchmark')}
+  </div>
+  <div class="gold-timestamps"><b>Published:</b> ${escText(goldQuote.publishedDate)} · Recorded 03:00 IST<br><b>Source:</b> All India Bullion (daily India-wide reference)<br><b>Last checked:</b> ${goldDate(goldQuote.checkedAt)} · Not an intraday live tick</div>
+  <div class="gold-toggle">
+   <button class="${goldView==='spot'?'active':''}" onclick="selectGoldView('spot')">Indian benchmark</button>
+   <button class="${goldView==='jewellery'?'active':''}" onclick="selectGoldView('jewellery')">Jewellery estimate</button>
+  </div>
+  ${goldView==='jewellery'?`<div class="gold-pick"><label class="gold-control-label" for="goldPremiumRange">Local jeweller adjustment: <b id="goldPremiumText">${goldPremium.toFixed(0)}%</b></label><input class="gold-premium" id="goldPremiumRange" type="range" min="0" max="25" step="1" value="${goldPremium}" oninput="setGoldPremium(this.value)"/><div class="ss">Estimate only; this is not a named jeweller’s quotation. Taxes, making charges, stones and wastage can change the final bill.</div></div>`:''}
+  <div style="overflow:auto;margin:10px 0;border:1px solid var(--line);border-radius:13px"><table class="gold-rates"><thead><tr><th>Purity</th><th>₹ / gram</th><th>₹ / 10 grams</th></tr></thead><tbody>${rates}</tbody></table></div>
+  <div class="gold-note"><b>India rate, not overseas spot:</b> The displayed 24K price is the publisher's dated India-wide bullion fix. All other karats use stated fineness ratios; actual city premiums, GST and jewellery making charges are separate. It is not an MCX futures quote or a guaranteed counter price.</div>
+  <div class="gold-links"><a href="https://allindiabullion.com/benchmark" target="_blank" rel="noopener noreferrer">↗ Source: All India Bullion</a><a href="https://www.ibjarates.com/" target="_blank" rel="noopener noreferrer">↗ Cross-check IBJA</a></div>
+  ${cityRatesPanel()}`;
+}
+function renderGoldDetail(){if(activeDetailKind==='gold'&&goldDetailOpen&&document.getElementById('detailSheet').classList.contains('open')){const sheet=document.getElementById('detailSheet'),p=sheet.scrollTop;document.getElementById('detailBody').innerHTML=goldLiveDetailBody();sheet.scrollTop=p;}}
+function openGoldDetail(){goldView='spot';showSheet('Gold Rates · India 18K–24K','Dated Indian bullion benchmark · city lookup on demand',goldLiveDetailBody());activeDetailKind='gold';goldDetailOpen=true;silverDetailOpen=false;if(!goldQuote||Date.now()-goldLastCheckedMs>1800000)refreshGold(true);}
+
+function closeDetail(){
+ goldDetailOpen=false;silverDetailOpen=false;activeDetailKind='none';activeDetailToken++;
+ document.getElementById('modalBackdrop').classList.remove('open');
+ document.getElementById('detailSheet').classList.remove('open');
+}
+function detailCell(k,v,c=''){
+ return `<div class="detailcell"><div class="dk">${k}</div><div class="dv ${c}">${v}</div></div>`;
+}
+function detailRows(obj){
+ return Object.entries(obj).filter(([k,v])=>v!==null&&v!==undefined&&v!=='--').map(([k,v])=>`<div class="detailrow"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+let activeDetailKind='none',activeDetailToken=0;
+function showSheet(title,sub,body){
+ // Invalidate delayed responses from any previous sheet.
+ activeDetailToken++;activeDetailKind='other';goldDetailOpen=false;silverDetailOpen=false;
+ document.getElementById('detailTitle').textContent=title;
+ document.getElementById('detailSub').textContent=sub||'';
+ document.getElementById('detailBody').innerHTML=body;
+ document.getElementById('modalBackdrop').classList.add('open');
+ document.getElementById('detailSheet').classList.add('open');
+ document.getElementById('detailSheet').scrollTop=0;
+}
+function indexDetail(name,key,extra=''){
+ const d=marketData[key]||{};
+ let body=`<div class="detailgrid">
+   ${detailCell('Level',fmtNum(d.price),cls(d.pct))}
+   ${detailCell('Change',fmtPct(d.pct),cls(d.pct))}
+   ${detailCell('Data status',freshnessLabel())}
+   ${detailCell('Session',key==='gift'?giftSessionStatus():marketStatus())}
+ </div>`;
+ body+=`<div class="detailsection"><h4>Session detail</h4>${detailRows({
+   'Previous close':Number.isFinite(d.prev)?fmtNum(d.prev):null,
+   'Open':Number.isFinite(d.open)?fmtNum(d.open):null,
+   'Day high':Number.isFinite(d.high)?fmtNum(d.high):null,
+   'Day low':Number.isFinite(d.low)?fmtNum(d.low):null,
+   'Source':d.source||marketData.mode,
+   'Data as of':marketData.timestamp
+ })}</div>`;
+ if(extra)body+=`<div class="detailsection"><h4>Interpretation</h4><div style="font-size:10px;line-height:1.55">${extra}</div></div>`;
+ showSheet(name,`Tap outside or × to close`,body);
+}
+function openDetail(type,arg){
+ if(type==='sgx')return openSGXDetail();
+ if(type==='nifty') return indexDetail('Nifty 50','nifty','This is the broad Indian large-cap benchmark. The app uses its direction and intraday trend as the largest component of the Market Pulse.');
+ if(type==='bank') return indexDetail('Bank Nifty','bank','Bank Nifty is used as a confirmation signal because financials have a large influence on the Indian market. A Nifty move without banking confirmation receives lower conviction.');
+ if(type==='sensex') return indexDetail('BSE Sensex','sensex','Sensex is a 30-stock BSE benchmark. It is used as an independent confirmation of broad large-cap direction.');
+ if(type==='vix') return indexDetail('India VIX','vix','India VIX measures expected volatility, not market direction. Rising VIX increases the risk/volatility score even if price direction remains bullish.');
+ if(type==='gift') {
+   const q=marketData.gift||{};
+   return showSheet('GIFT Nifty','NSE IX index futures · independent quote source',
+     `<div class="detailgrid">${detailCell('Latest verified',fmtNum(q.price))}${detailCell('Change',fmtPct(q.pct),cls(q.pct))}${detailCell('Exchange session',giftSessionStatus())}${detailCell('Quote time',escText(q.asOf||'Unavailable'))}</div>
+      <div class="detailsection"><h4>GIFT quote availability</h4><p class="ss">${q.asOf?'Timestamp from source; market status and quote time are different.':'The official public feed is currently inaccessible or has no valid timestamp.'} ${q.isCached?'This is a saved observation, not a new live quote.':''}</p>
+      <p class="ss">Source: ${escText(q.source||'Official NSE market status · GIFT Nifty')} · Verify exchange trading hours and expiry. This is not the SGX Straits Times Index.</p>
+      <a href="https://www.nseix.com/" target="_blank" rel="noopener noreferrer">Open official NSE IX market data ↗</a></div>`);
+ }
+
+ if(type==='indiaSession'){
+   const session=activeNseSession(),date=escText(session.date||dateIST()),source=escText(session.source||'Trading timetable');
+   const hours=session.open?`${escText(session.open)}–${escText(session.close)} IST`:'No continuous session scheduled';
+   return showSheet('Indian Cash Market',marketStatus(),`<div class="detailsection"><h4>Indian equity trading calendar</h4>
+     <div class="detailgrid">${detailCell('Date',date)}${detailCell('Session',escText(session.sessionName||'Regular equity session'))}${detailCell('Trading hours',hours)}${detailCell('Schedule source',source)}</div>
+     <p class="ss">Exchange holidays, special weekends and shortened trading days can change market hours. The app follows the latest available schedule or exchange status. If a fresh exchange status is unavailable, its published schedule is used.</p>
+     <p class="ss">Market quotes are checked approximately every 15 seconds during active trading while the app is visible. Public providers may still publish delayed or unchanged prices. Read the quote timestamp before acting.</p>
+     <a href="https://www.nseindia.com/resources/exchange-communication-holidays" target="_blank" rel="noopener noreferrer">Official NSE hours and holidays ↗</a></div>`);
+ }
+ if(type==='global'){
+   const g=marketData.global||{};
+   const body=`<div class="detailgrid">
+    ${detailCell('US session',usSessionStatus())}
+    ${detailCell('GIFT session',giftSessionStatus())}
+    ${detailCell('Nasdaq',g.nasdaq?fmtPct(g.nasdaq.pct):'Source unavailable',g.nasdaq?cls(g.nasdaq.pct):'')}
+    ${detailCell('S&P 500',g.sp?fmtPct(g.sp.pct):'Source unavailable',g.sp?cls(g.sp.pct):'')}
+    ${detailCell('Nikkei 225',g.nikkei?fmtPct(g.nikkei.pct):'Source unavailable',g.nikkei?cls(g.nikkei.pct):'')}
+    ${detailCell('Singapore STI',g.sgx?fmtPct(g.sgx.pct):'Source unavailable',g.sgx?cls(g.sgx.pct):'')}
+    ${detailCell('Refresh cycle','Every 15 sec')}
+   </div>
+   <div class="detailsection"><h4>How global monitoring works</h4><div style="font-size:10px;line-height:1.6">The global refresh cycle can continue after NSE closes. Indian cash indices keep the last successful snapshot, while GIFT Nifty and accessible US/Asian sources continue to refresh according to their own sessions. If a browser blocks a source, its last known value remains timestamped instead of being presented as current.</div></div>`;
+   return showSheet('Global Markets','Session-aware monitoring',body);
+ }
+ if(type==='sectors'){
+   const pos=(marketData.sectors||[]).filter(x=>x[2]>0).length;
+   const body=`<div class="detailgrid">${detailCell('Positive sectors',`${pos}/${marketData.sectors.length}`)}${detailCell('Universe','India · NSE')}</div>
+   <div class="detailsection"><h4>What this sector pulse means</h4><div style="font-size:10px;line-height:1.6">These 12 readings represent NSE sector and thematic indices, not unique industry-company groups. The Infrastructure and Energy indices overlap with others; Bank, PSU Bank and Financial Services also share constituents. Market Pulse uses a narrower eight-family sector basket to reduce double-counting.</div></div>`;
+   return showSheet('Indian Sector Breadth','12 NSE sector and thematic benchmarks',body);
+ }
+ if(type==='sector'){
+   return openSectorDetail(arg);
+ }
+}
+
+function quick(x){document.getElementById('q').value=x;askAI()}
+let financeChatHistory=[],chatGeneration=0;
+function startNewFinanceChat(){
+ chatGeneration++;financeChatHistory=[];
+ const box=document.getElementById('chat');box.replaceChildren();
+ const intro=document.createElement('div');intro.className='msg bot';intro.textContent='New conversation. Ask about markets, Indian gold/silver rates, a selected NSE stock, investments or finance concepts.';box.appendChild(intro);
+ document.getElementById('aiStatus').textContent='New chat · previous conversation context cleared';
+}
+function getAppAIContext(){
+ const minimal={asOf:marketData.timestamp,marketSession:marketStatus(),selectedSymbol:selectedPulseSymbol,selectedName:activeSymbolName(),timeframe:selectedFrame,quote:latestPulsePack?.quote||null,
+  recentCloses:selectedHistoricalRows().slice(-5),nifty:marketData.nifty,bankNifty:marketData.bank,sensex:marketData.sensex,vix:marketData.vix,giftNifty:marketData.gift,
+  sectors:(marketData.sectors||[]).map(s=>({name:s[0],pct:s[2]})),
+  gold:goldQuote?.kind==='india-daily-benchmark'?{source:'India daily benchmark',date:goldQuote.publishedDate,rate24kInrPerGram:goldQuote.spot24kInrPerGram,rate22kInrPerGram:goldRateFor(GOLD_GRADES[2])}:null,
+  silver:silverQuote?.kind==='india-daily-benchmark'?{source:'India daily benchmark',date:silverQuote.publishedDate,priceInrPerGram:silverQuote.priceInrPerGram,priceInrPerKg:silverQuote.priceInrPerKg}:null};
+ return minimal;
+}
+async function askAI(){
+ const q=document.getElementById('q'),chat=document.getElementById('chat'),btn=document.getElementById('askBtn');
+ const question=q.value.trim();if(!question||btn.disabled)return;
+ const u=document.createElement('div');u.className='msg user';u.textContent=question;chat.appendChild(u);
+ q.value='';btn.disabled=true;btn.textContent='Thinking…';const generation=chatGeneration;
+ const wait=document.createElement('div');wait.className='msg bot';wait.textContent='Checking latest available app context…';chat.appendChild(wait);chat.scrollTop=chat.scrollHeight;
+ const previous=financeChatHistory.slice(-8).map(x=>({role:x.role,content:x.content.slice(0,900)}));
+ try{
+  if(!API_BASE)throw Error('Market service not configured.');
+  const response=await fetch(`${API_BASE}/api/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,history:previous,appContext:getAppAIContext()})});
+  const j=await response.json();if(!response.ok||!j.ok)throw Error(j.error||'Finance AI not available');
+  if(generation!==chatGeneration)return;
+  const answer=String(j.answer||'No verified answer available.');wait.textContent=answer;
+  financeChatHistory.push({role:'user',content:question},{role:'assistant',content:answer});financeChatHistory=financeChatHistory.slice(-12);
+  if(j.sources?.length){const div=document.createElement('div');div.className='ss';div.textContent='Sources: ';
+    j.sources.slice(0,3).forEach(x=>{if(!/^https:\/\//.test(x.url))return;const a=document.createElement('a');a.href=x.url;a.textContent=x.title||'Source';a.target='_blank';a.rel='noopener noreferrer';div.appendChild(a);div.appendChild(document.createTextNode(' · '))});chat.appendChild(div)}
+  document.getElementById('aiStatus').textContent=`AI · ${j.model||'Verified app data'} · ${j.dataDate||'latest available context'}${j.webSearchUsed?' · web context':''}`;
+ }catch(e){if(generation===chatGeneration){wait.textContent=`I couldn't verify that answer: ${e.message}`;document.getElementById('aiStatus').textContent='Data/service unavailable; no price was fabricated.'}}
+ finally{if(generation===chatGeneration){btn.disabled=false;btn.textContent='Ask';chat.scrollTop=chat.scrollHeight}}
+}
+function watchReportDetails(){
+ if(selectedPulseSymbol==='^NSEI')return 'Watchlist: Broad Indian market (Nifty 50).';
+ const pack=pulseDataBySymbol[selectedPulseSymbol]||latestPulsePack;
+ const name=activeSymbolName();
+ if(!pack||pack.symbol!==selectedPulseSymbol)return `SELECTED STOCK · ${name} (${selectedPulseSymbol})\nStock quote: unavailable; refresh completed-candle data.`;
+ const period=selectedFrame==='current'?frameSignalForCurrent(pack):pack.periods?.[selectedFrame];
+ return `SELECTED STOCK · ${name} (${selectedPulseSymbol})
+Quote: ${fmtNum(pack.quote?.price)} (${fmtPct(pack.quote?.pct)} vs prior close)
+Quote timestamp: ${pack.quoteDate||'Unavailable'} ${pack.quoteTime||''} IST
+Selected interval: ${frameName(selectedFrame)}
+${period?`Interval move: ${fmtPct(period.pct)} · End level: ${fmtNum(period.close)} · ${period.asOf||''}`:'Interval reading unavailable'}`;
+}
+function frameName(key){return ({current:'Current',m15:'15-minute',m30:'30-minute',h1:'1-hour',d1:'Daily'})[key]||key}
+function reportMarketDate(){
+ const ep=Number(marketData.asOfEpoch);
+ if(Number.isFinite(ep)&&ep>0)return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ep));
+ return null;
+}
+function closingReportReady(){
+ // Actual cash-market clock, never infer "OPEN" from a global market or GIFT session.
+ const t=calendarIST();
+ return marketStatus()==='Closed' || t.min>=930 || t.min<555;
+}
+function currentBrief(){
+ const m=scoreModel(), ss=sectorStats(), gs=globalStats(), ts=trendStats();
+ const leaders=ss?ss.top.slice(0,3).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const global=gs?gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', '):'Not available';
+ return `MONEYMANTRA 9 · CURRENT MARKET BRIEF
+
+Data as of: ${marketData.timestamp||'Unavailable'}
+${watchReportDetails()}
+
+BROAD INDIAN MARKET SNAPSHOT (NIFTY, BANK NIFTY, SENSEX)
+Market session: ${marketStatus()}
+Market Pulse: ${m.state} ${m.score>0?'+':''}${m.score}
+Confidence: ${m.confidence}%
+Volatility: ${m.vol}
+
+Nifty 50: ${fmtNum(marketData.nifty?.price)} (${fmtPct(marketData.nifty?.pct)})
+Bank Nifty: ${fmtNum(marketData.bank?.price)} (${fmtPct(marketData.bank?.pct)})
+Sensex: ${fmtNum(marketData.sensex?.price)} (${fmtPct(marketData.sensex?.pct)})
+India VIX: ${fmtNum(marketData.vix?.price)} (${fmtPct(marketData.vix?.pct)})
+GIFT Nifty: ${fmtNum(marketData.gift?.price)} (${fmtPct(marketData.gift?.pct)})
+
+Sector leaders: ${leaders}
+Global cues: ${global}
+${ts?`Intraday trend: ${ts.start} ${fmtPct(ts.first)} → ${ts.end} ${fmtPct(ts.last)}; range ${fmtPct(ts.lo)} to ${fmtPct(ts.hi)}.`:''}
+
+Interpretation:
+${explanation(m)}
+
+Investor note:
+Use this as market context, not as a personalized buy/sell instruction.`;
+}
+function closingReport(){
+ const m=scoreModel(),ss=sectorStats(),gs=globalStats(),ts=trendStats();
+ const n=marketData.nifty||{},b=marketData.bank||{},s=marketData.sensex||{},v=marketData.vix||{};
+ const leaders=ss?ss.top.slice(0,3).map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const weak=ss?ss.weak.map(x=>`${x[0]} ${fmtPct(x[2])}`).join(', '):'Not available';
+ const global=gs?gs.rows.map(x=>`${x[0]} ${fmtPct(x[1])}`).join(', '):'Not available';
+ const title=closingReportReady()?'CLOSING MARKET REPORT':'PRE-CLOSE REPORT · SESSION IN PROGRESS';
+ return `MONEYMANTRA 9 · ${title}
+
+Trading-date data: ${marketData.timestamp||'Unavailable'}
+Closing date: ${reportMarketDate()||'Not available'} · Cash market: ${closingReportReady()?'Closed':'Open / pre-close'}
+
+${watchReportDetails()}
+
+INDIAN MARKET CLOSE / LATEST
+Nifty 50: ${fmtNum(n.price)} (${fmtPct(n.pct)})
+Open: ${fmtNum(n.open)} | High: ${fmtNum(n.high)} | Low: ${fmtNum(n.low)} | Prev: ${fmtNum(n.prev)}
+Bank Nifty: ${fmtNum(b.price)} (${fmtPct(b.pct)})
+Sensex: ${fmtNum(s.price)} (${fmtPct(s.pct)})
+India VIX: ${fmtNum(v.price)} (${fmtPct(v.pct)})
+
+SESSION SHAPE
+${ts?`Timeline points: ${ts.points}
+Opening reading: ${fmtPct(ts.first)}
+Closing/latest reading: ${fmtPct(ts.last)}
+Intraday strongest reading: ${fmtPct(ts.hi)}
+Intraday weakest reading: ${fmtPct(ts.lo)}`:'Intraday timeline unavailable.'}
+
+SECTOR PARTICIPATION
+Positive sectors: ${ss?`${ss.positive}/${ss.total}`:'Unavailable'}
+Leaders: ${leaders}
+Weakest: ${weak}
+
+GLOBAL CONTEXT
+${global}
+
+FINAL MARKET PULSE
+${m.state} ${m.score>0?'+':''}${m.score} · Confidence ${m.confidence}% · Volatility ${m.vol}
+
+Closing interpretation:
+${explanation(m)}
+
+This report is an educational market summary and not a personalized investment recommendation.`;
+}
+function generateReport(mode){
+ const box=document.getElementById('reportBox');
+ box.textContent=mode==='close'?closingReport():currentBrief();
+ document.querySelectorAll('.report-mode-btn').forEach(b=>{const active=b.dataset.report===mode;b.classList.toggle('active-report',active);b.setAttribute('aria-pressed',active?'true':'false')});
+ document.getElementById('reportStatus').textContent=mode==='close'?'Closing-format report generated · verify exchange date and timestamps before sharing':'Current market brief generated · verify timestamps before sharing';
+}
+function currentReportText(){const text=document.getElementById('reportBox')?.textContent?.trim()||'';return text.startsWith('MONEYMANTRA 9')?text:''}
+async function copyMarketReport(){
+ const t=currentReportText(),status=document.getElementById('reportStatus');if(!t){status.textContent='Generate a report before copying.';return}
+ try{await navigator.clipboard.writeText(t);status.textContent='Report copied to clipboard.'}catch(e){
+  const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();const okay=document.execCommand('copy');ta.remove();status.textContent=okay?'Report copied.':'Select the report text and copy manually.';
+ }
+}
+function openReportShare(){if(!currentReportText()){document.getElementById('reportStatus').textContent='Generate a report before sharing.';return}document.getElementById('waError').textContent='';document.getElementById('reportShareOverlay').style.display='grid'}
+function closeReportShare(){document.getElementById('reportShareOverlay').style.display='none'}
+function shareMarketReportWhatsApp(){
+ const text=currentReportText();if(!text){document.getElementById('waError').textContent='Generate a report first.';return}
+ let phone=document.getElementById('waPhone').value.replace(/[^\d]/g,'');
+ if(phone.startsWith('00'))phone=phone.slice(2);
+ if(phone.length===10)phone='91'+phone;
+ if(phone&&!/^\d{10,15}$/.test(phone)){document.getElementById('waError').textContent='Enter a valid 10-digit Indian mobile number or international number with country code.';return}
+ const url=phone?`https://wa.me/${phone}?text=${encodeURIComponent(text)}`:`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+ document.getElementById('reportStatus').textContent='WhatsApp is opening with a prefilled draft; you must review and send it yourself.';
+ closeReportShare();window.open(url,'_blank','noopener,noreferrer');
+}
+
+function toggleAuto(){
+ autoRefresh=!autoRefresh;
+ document.getElementById('autoSwitch').classList.toggle('on',autoRefresh);
+ setupAuto();
+}
+function effectiveRefreshMs(){
+  // 15-second foreground CHECKS, not guaranteed 15-second fresh exchange prices.
+  // Closed-market grouped quotes are cached longer by the Worker.
+  return REFRESH_MS;
+}
+function scheduleNextRefresh(){
+ if(!autoRefresh){
+   nextRefreshAt=null;
+   document.getElementById('nextRefresh').textContent='Auto-refresh paused';
+   return;
+ }
+ nextRefreshAt=Date.now()+effectiveRefreshMs();
+ updateCountdown();
+}
+function updateCountdown(){
+ const el=document.getElementById('nextRefresh');
+ if(!autoRefresh){el.textContent='Auto-refresh paused';return}
+ if(!nextRefreshAt){el.textContent='Next refresh: 00:15';return}
+ const left=Math.max(0,nextRefreshAt-Date.now());
+ const s=Math.ceil(left/1000),m=Math.floor(s/60),sec=s%60;
+ const prefix=marketStatus()==='Closed'?'Next source check':'Next refresh';
+ el.textContent=`${prefix}: ${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+function setupAuto(){
+ if(autoTimer)clearTimeout(autoTimer);
+ if(countdownTimer)clearInterval(countdownTimer);
+ if(autoRefresh){
+   scheduleNextRefresh();
+   countdownTimer=setInterval(updateCountdown,1000);
+   armNextRefresh();
+ }else{
+   nextRefreshAt=null;
+   document.getElementById('nextRefresh').textContent='Auto-refresh paused';
+ }
+}
+function armNextRefresh(){
+ if(autoTimer)clearTimeout(autoTimer);
+ if(!autoRefresh || document.visibilityState==='hidden')return;
+ autoTimer=setTimeout(async ()=>{
+   if(document.visibilityState==='hidden')return; // Suspend checks while reading other pages.
+   await refreshAll(false);
+   armNextRefresh();
+ },effectiveRefreshMs());
+}
+// === Multi-timeframe and Stock Watch UI ===
+let STOCK_CHOICES = [
+ ['RELIANCE.NS','Reliance Industries'], ['INFY.NS','Infosys'], ['TCS.NS','TCS'],
+ ['HDFCBANK.NS','HDFC Bank'],['ICICIBANK.NS','ICICI Bank'],['SBIN.NS','SBI'],
+ ['BHARTIARTL.NS','Bharti Airtel'],['ITC.NS','ITC'],['WIPRO.NS','Wipro'],
+ ['HINDUNILVR.NS','Hindustan Unilever'],['LT.NS','Larsen & Toubro'],['AXISBANK.NS','Axis Bank'],
+ ['KOTAKBANK.NS','Kotak Mahindra Bank'],['BAJFINANCE.NS','Bajaj Finance'],
+ ['MARUTI.NS','Maruti Suzuki'],['TATAMOTORS.NS','Tata Motors'],['SUNPHARMA.NS','Sun Pharma'],
+ ['NTPC.NS','NTPC'],['TATASTEEL.NS','Tata Steel'],['ONGC.NS','ONGC']
+];
+let selectedPulseSymbol='^NSEI';
+let selectedFrame='current';
+let latestPulsePack=null;
+let pulseFetchedAt=0;
+let pulseFetchActive=false;
+let lastPulseRefreshKey='';
+let lastPulseAttemptMs=0;
+let pulseDataBySymbol={};
+function formatPulseAsOf(s){return s||'Waiting for a completed interval'}
+function activeSymbolName(){return selectedPulseSymbol==='^NSEI'?'Indian Market':(STOCK_CHOICES.find(a=>a[0]===selectedPulseSymbol)?.[1]||latestPulsePack?.name||selectedPulseSymbol)}
+function pulseStatusText(){
+ const times={current:'15-second check',m15:'15-minute completed candle',m30:'30-minute completed candle',h1:'60-minute completed candle',d1:'Completed daily close'};
+ return times[selectedFrame];
+}
+const NSE_DIRECTORY_STORE='mm9_nse_directory_v1';
+let nseDirectoryLoaded=false;
+function indiaDateKey(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+function displayNSEDirectory(entries,sourceLabel){
+ if(!Array.isArray(entries)||!entries.length)return;
+ const seen=new Set(),merged=[];
+ for(const item of [...entries,...STOCK_CHOICES]){
+   if(!Array.isArray(item)||item.length<2)continue;
+   const symbol=String(item[0]).trim().toUpperCase(),name=String(item[1]).trim();
+   if(!/^[A-Z0-9&-]{1,20}\.NS$/.test(symbol)||seen.has(symbol))continue;
+   seen.add(symbol);merged.push([symbol,name]);
+ }
+ STOCK_CHOICES=merged.sort((a,b)=>a[1].localeCompare(b[1]));
+ const dl=document.getElementById('stockOptions'),fragment=document.createDocumentFragment();
+ for(const [sym,name] of STOCK_CHOICES){const opt=document.createElement('option');opt.value=sym;opt.label=name;fragment.appendChild(opt)}
+ dl.replaceChildren(fragment);
+ document.getElementById('tickerCatalogStatus').textContent=`${entries.length.toLocaleString('en-IN')} NSE tickers · ${sourceLabel} · updated daily when the source is accessible`;
+ nseDirectoryLoaded=true;
+}
+async function refreshNSEDirectory(){
+ const el=document.getElementById('tickerCatalogStatus');
+ let saved=null;try{saved=JSON.parse(localStorage.getItem(NSE_DIRECTORY_STORE)||'null')}catch(_){}
+ if(saved?.items?.length) displayNSEDirectory(saved.items,`saved list ${saved.date||''}`);
+ if(saved?.date===indiaDateKey())return;
+ if(!API_BASE){el.textContent='NSE directory requires the market data service. Direct ticker entry remains available.';return}
+ try{
+   const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),11000);
+   let res;try{res=await fetch(`${API_BASE}/api/symbols`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(t)}
+   const j=await res.json();if(!res.ok||!j.ok||!Array.isArray(j.items)||!j.items.length)throw Error(j.error||'NSE directory blocked');
+   const rows=j.items.filter(x=>Array.isArray(x)&&x[0]&&x[1]);
+   displayNSEDirectory(rows,`NSE equity directory ${j.asOf||indiaDateKey()}`);
+   try{localStorage.setItem(NSE_DIRECTORY_STORE,JSON.stringify({date:indiaDateKey(),items:rows}))}catch(_){}
+ }catch(e){el.textContent=saved?.items?.length?`${saved.items.length} saved NSE tickers · live refresh unavailable (${e.message})`:`NSE catalog unavailable (${e.message}); all valid NSE tickers can still be entered manually.`}
+}
+function setWatchSymbol(s){
+ const symbol=String(s||'').toUpperCase().trim();
+ if(symbol!=='^NSEI'&&!/^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(symbol)){
+  document.getElementById('watchStatus').textContent='Enter an NSE ticker such as RELIANCE.NS or INFY.NS, or a BSE ticker ending .BO.';
+  return;
+ }
+ selectedPulseSymbol=symbol;
+ toggleBreadthWatchNav();
+ document.getElementById('watchSearch').value=symbol==='^NSEI'?'':symbol;
+ document.getElementById('watchStatus').textContent=`Watching ${activeSymbolName()} · ${symbol==='^NSEI'?'broad market':'individual stock'}`;
+ latestPulsePack=pulseDataBySymbol[symbol]||null;
+ lastPulseRefreshKey='';
+ renderWatchPulse();
+ loadWatchPulse(true);
+}
+function setMarketWatch(){setWatchSymbol('^NSEI')}
+function selectQuickStock(sym){setWatchSymbol(sym)}
+function submitStockSearch(){
+ const raw=document.getElementById('watchSearch').value.trim();
+ if(!raw){setMarketWatch();return}
+ const normalized=raw.toUpperCase().replace(/\s+/g,'');
+ const choiceMatch=raw.match(/^(.+?)(?:\s*[—–|]\s*.+)?$/);
+ const chosen=choiceMatch?.[1]?.trim().toUpperCase()||'';
+ const found=STOCK_CHOICES.find(a=>a[0]===normalized||a[0]===chosen||a[1].toUpperCase()===raw.toUpperCase()||a[0].split('.')[0]===normalized);
+ if(found){setWatchSymbol(found[0]);return}
+ // Actual exchange code only; never guess a legal company name.
+ if(/^[A-Z0-9&-]{1,20}\.(NS|BO)$/.test(normalized)){setWatchSymbol(normalized);return}
+ document.getElementById('watchStatus').textContent='Please enter a valid exchange symbol such as RELIANCE.NS or INFY.NS; try selecting a company from the refreshed NSE directory, or enter its ticker with .NS.';
+}
+function switchPulseFrame(frame){
+ if(!['current','m15','m30','h1','d1'].includes(frame))return;
+ selectedFrame=frame;
+ document.querySelectorAll('[data-pulse-frame]').forEach(b=>{
+  const on=b.dataset.pulseFrame===frame;
+  b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');
+ });
+ renderWatchPulse();
+ if(frame!=='current'||selectedPulseSymbol!=='^NSEI')loadWatchPulse(false);
+}
+function calendarIST(){
+ const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+ const o=Object.fromEntries(p.map(x=>[x.type,x.value]));
+ return {date:`${o.year}-${o.month}-${o.day}`,min:+o.hour*60+(+o.minute)};
+}
+function intervalRefreshKey(){
+ const t=calendarIST();
+ // Current quotes are covered by the existing 15-second refresh clock.
+ if(selectedFrame==='current')return `${t.date}/current/${Math.floor(Date.now()/15000)}`;
+ if(selectedFrame==='d1')return `${t.date}/daily/${t.min>=930?'close':'before-close'}`;
+ const period={m15:15,m30:30,h1:60}[selectedFrame];
+ // Use market-open 09:15 anchored windows; hourly ends 10:15,11:15 etc.
+ const bucket=Math.floor(Math.max(0,Math.min(t.min,930)-555)/period);
+ return `${t.date}/${selectedFrame}/${bucket}`;
+}
+async function loadWatchPulse(force=false){
+ if(pulseFetchActive||!API_BASE)return;
+ const key=intervalRefreshKey();
+ const symbol=selectedPulseSymbol;
+ if(!force&&latestPulsePack&&lastPulseRefreshKey===key)return;
+ pulseFetchActive=true;lastPulseAttemptMs=Date.now();
+ const status=document.getElementById('frameFetchStatus');
+ if(status) status.textContent='Checking the latest completed price period…';
+ try{
+  const c=new AbortController();const timer=setTimeout(()=>c.abort(),14000);
+  let response;
+  try{response=await fetch(`${API_BASE}/api/pulse?symbol=${encodeURIComponent(symbol)}`,{cache:'no-store',signal:c.signal});}
+  finally{clearTimeout(timer)}
+  const pack=await response.json();
+  if(!response.ok||!pack.ok)throw new Error(pack.error||'Pulse data temporarily unavailable');
+  if(symbol!==selectedPulseSymbol)return;
+  latestPulsePack=pack;
+  pulseDataBySymbol[symbol]=pack;
+  pulseFetchedAt=Date.now();lastPulseRefreshKey=key;
+  saveObservation(pack);
+  renderWatchPulse();
+ }catch(e){
+  if(status)status.textContent=`Dedicated candle service unavailable (${e?.message||'source unavailable'}). ${selectedFrame==='d1'&&dailyCloseFallback()?'Using the timestamped last-available cash closing quote as an identified fallback.':'Prior verified observation retained if available.'}`;
+  renderWatchPulse();
+  if(status)status.textContent=`Dedicated candle request failed (${e?.message||'source unavailable'}). ${selectedFrame==='d1'&&dailyCloseFallback()?'Showing dated close-based fallback.':'Prior verified period remains if available.'}`;
+ }finally{pulseFetchActive=false;if(symbol!==selectedPulseSymbol)setTimeout(()=>loadWatchPulse(true),20)}
+}
+function frameSignalForCurrent(pack){
+ const price=pack?.quote?.price, pct=pack?.quote?.pct;
+ if(!Number.isFinite(price)||!Number.isFinite(pct))return null;
+ const benchmark=marketData.nifty?.pct;
+ const score=Math.round(Math.max(-100,Math.min(100,pct/3.5*75)));
+ const signal=score>=65?'STRONG BULLISH':score>=35?'BULLISH':score>=15?'MILD BULLISH':score<=-65?'STRONG BEARISH':score<=-35?'BEARISH':score<=-15?'MILD BEARISH':'NEUTRAL';
+ return {score,signal,pct,close:price,confidence:50,coverage:'One stock · latest available price change',asOf:`${pack.quoteDate||'—'} ${pack.quoteTime||'—'} IST`,relative:Number.isFinite(benchmark)?pct-benchmark:null,method:'Price change since the previous trading close; not a 15-second return.',complete:false};
+}
+function dailyCloseFallback(){
+ // This is a quote-based end-of-day view ONLY, not a reconstructed historical candle.
+ // The source date must match the latest available recorded Indian cash-market session.
+ const stock=selectedPulseSymbol!=='^NSEI';
+ const pack=stock?(pulseDataBySymbol[selectedPulseSymbol]||latestPulsePack):null;
+ if(stock&&pack?.symbol!==selectedPulseSymbol)return null;
+ const q=stock?pack?.quote:marketData.nifty;
+ const pct=nullableQuoteNumber(q?.pct),close=nullableQuoteNumber(q?.price);
+ if(pct===null||close===null)return null;
+ const asOf=stock?`${pack.quoteDate||''} ${pack.quoteTime||''} IST`:marketData.timestamp;
+ const sampleTime=stock?(pack.quoteTime||''):marketData.asOfEpoch?
+   new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(marketData.asOfEpoch)) : '';
+ const [hr,mm]=sampleTime.split(':').map(Number);
+ if(!Number.isFinite(hr)||!Number.isFinite(mm)||hr*60+mm<925)return null;
+ const comparison=stock?[marketData.nifty?.pct]:[marketData.bank?.pct,marketData.sensex?.pct];
+ const available=comparison.map(nullableQuoteNumber).filter(x=>x!==null);
+ const scale=stock?3.5:1.5;
+ const primary=Math.max(-100,Math.min(100,pct/scale*75));
+ const avg=available.length?available.reduce((a,v)=>a+Math.max(-100,Math.min(100,v/scale*75)),0)/available.length:0;
+ const score=Math.round(stock?primary:primary*(available.length?.7:1)+avg*(available.length?.3:0));
+ const signal=score>=65?'STRONG BULLISH':score>=35?'BULLISH':score>=15?'MILD BULLISH':score<=-65?'STRONG BEARISH':score<=-35?'BEARISH':score<=-15?'MILD BEARISH':'NEUTRAL';
+ return {score,signal,pct,close,confidence:Math.min(70,55+available.length*6),coverage:`${1+available.length} quote signals · close-based fallback`,asOf,
+  method:'Last available Indian closing quote compared with its previous session (not a completed-candle request)',complete:true,derivedFromQuote:true};
+}
+function renderWatchPulse(){
+ const stock=selectedPulseSymbol!=='^NSEI';
+ const showFrame=stock||selectedFrame!=='current';
+ const hero=document.getElementById('currentPulseSection');
+ const period=document.getElementById('framePulseSection');
+ hero.style.display=showFrame?'none':'';
+ period.style.display=showFrame?'':'none';
+ document.getElementById('stockSnapshot').style.display=stock?'':'none';
+ document.getElementById('stockLabel').textContent=activeSymbolName();
+ document.getElementById('stockTicker').textContent=selectedPulseSymbol;
+ document.getElementById('periodHelp').textContent=stock?
+  'Stock Pulse tracks one share, not the whole market. Intraday periods use completed price candles; daily uses the final daily close.':
+  'Intraday Pulse is based on completed Nifty candles with Bank Nifty/Sensex confirmation when available. The daily signal uses completed closes.';
+ const name=activeSymbolName();
+ const titles={current:'Current Stock Pulse',m15:'15 Minute Pulse',m30:'30 Minute Pulse',h1:'1 Hour Pulse',d1:'Daily Pulse'};
+ document.getElementById('frameTitle').textContent=`${titles[selectedFrame]} · ${name}`;
+ document.getElementById('frameCadence').textContent=pulseStatusText();
+  const timingNotes={
+   current:'Latest available quote, checked every 15 seconds. A check does not mean a new price was published.',
+   m15:'15-minute periods finish at 09:30, 09:45, 10:00, etc. Only completed periods are used.',
+   m30:'30-minute periods finish at 09:45, 10:15, 10:45, etc. Only completed periods are used.',
+   h1:'Full hourly periods finish at 10:15, 11:15, etc. The final shorter 15:15–15:30 window is not labelled a full hour.',
+   d1:'The Daily Pulse uses a completed Indian cash-market session after 15:30 IST when the provider publishes its close.'
+  };
+  document.getElementById('frameNext').textContent=timingNotes[selectedFrame];
+  document.getElementById('frameRefreshBtn').textContent=selectedFrame==='current'?'Check latest available quote':selectedFrame==='d1'?'Check completed daily close':'Check latest completed candle';
+ const pack=latestPulsePack;
+ const primary=stock&&selectedFrame==='current'?frameSignalForCurrent(pack):pack?.periods?.[selectedFrame];
+ const pulse=primary||(selectedFrame==='d1'?dailyCloseFallback():null);
+ const hasPulse=pulse&&Number.isFinite(pulse.score);
+ document.getElementById('frameScore').textContent=hasPulse?(pulse.score>0?'+':'')+pulse.score:'—';
+  document.getElementById('frameSignal').textContent=hasPulse?pulse.signal:'AWAITING DATA';
+  const ring=document.getElementById('frameGauge');
+  const dial=hasPulse?Math.min(96,Math.max(4,50+Number(pulse.score)*.5)):0;
+  const ringColor=hasPulse?(pulse.score>14?'#4CC58F':pulse.score<-14?'#ef7a80':'#f1cb70'):'#9fb1b8';
+  ring.style.background=`conic-gradient(${ringColor} 0 ${dial}%,rgba(255,255,255,.16) ${dial}% 100%)`;
+  ring.setAttribute('aria-label',hasPulse?`${pulse.signal} direction score ${pulse.score}`:'No available pulse score for selected period');
+  document.getElementById('frameReadingHelp').textContent=hasPulse?'Observed momentum, not a forecast or trade recommendation.':'No completed source observation available for this selection.';
+ document.getElementById('frameChange').textContent=hasPulse?fmtPct(pulse.pct):'—';
+ document.getElementById('frameLevel').textContent=hasPulse?fmtNum(pulse.close):'—';
+ document.getElementById('frameAgreement').textContent=hasPulse?pulse.coverage:'Not enough completed market data';
+ document.getElementById('frameConfidence').textContent=hasPulse?`${pulse.confidence}%`:'—';
+  document.getElementById('frameTime').textContent=hasPulse?formatPulseAsOf(pulse.asOf):'No completed period currently available';
+  document.getElementById('frameLastBar').textContent=hasPulse?`Last source observation: ${formatPulseAsOf(pulse.asOf)}. ${pulse.derivedFromQuote?'Close-based fallback (not a verified full candle).':'Completed interval/quote shown above.'}`:'Last recorded candle: not currently available for this ticker and timeframe.';
+ document.getElementById('frameCaution').textContent=pulse?.derivedFromQuote?'Derived from a timestamped last-available closing quote because the candle feed is unavailable; verify exchange close and date.':stock?'Stock strength describes observed movement, not an entry/exit recommendation.':'Pulse score describes observed momentum and agreement, not a probability of price direction.';
+ if(pack){
+  document.getElementById('frameFetchStatus').textContent=`Source: ${pack.source} · ${pack.generatedAt?new Date(pack.generatedAt).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'}):'—'} IST check`;
+  document.getElementById('stockPrice').textContent=fmtNum(pack.quote?.price);
+  document.getElementById('stockMove').textContent=fmtPct(pack.quote?.pct);
+  document.getElementById('stockSource').textContent=`Quote date/time: ${pack.quoteDate||'—'} ${pack.quoteTime||'—'} IST · prices may be delayed`;
+ }else{
+  document.getElementById('frameFetchStatus').textContent=pulse?.derivedFromQuote?'Showing last-available closing quote while completed-candle source is checked.':'Connecting to the chart source…';
+ }
+  renderPulseJournal();
+  renderTimeline();
+}
+const OBSERVATION_KEY='mm9_pulse_observations_v2';
+function storedObservations(){try{return JSON.parse(localStorage.getItem(OBSERVATION_KEY)||'{}')}catch(_){return {}}}
+function saveObservation(pack){
+ if(!pack?.symbol||!Array.isArray(pack.history))return;
+ const rows=pack.history.filter(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&Number.isFinite(Number(r.close)))
+    .map(r=>({symbol:pack.symbol,date:r.date,close:Number(r.close),changePct:nullableQuoteNumber(r.changePct??r.pct)}))
+    .sort((a,b)=>a.date.localeCompare(b.date)).slice(-21);
+ if(!rows.length)return;
+ try{const all=storedObservations();all[pack.symbol]={rows,at:Date.now(),source:pack.source};localStorage.setItem(OBSERVATION_KEY,JSON.stringify(all))}catch(_){}
+}
+function selectedHistoricalRows(){
+ const rows=latestPulsePack?.symbol===selectedPulseSymbol&&Array.isArray(latestPulsePack.history)?latestPulsePack.history:null;
+ const saved=storedObservations()[selectedPulseSymbol]?.rows;
+ const ordered=(rows?.length?rows:saved||[]).filter(r=>r&&Number.isFinite(Number(r.close))).sort((a,b)=>a.date.localeCompare(b.date)).slice(-21);
+ // Source may provide `pct`; legacy saved entries used `changePct`.
+ return ordered.map((r,i)=>{
+  const stated=nullableQuoteNumber(r.changePct??r.pct);
+  const previous=i>0?Number(ordered[i-1].close):null;
+  const computed=previous!==null&&previous>0?(Number(r.close)/previous-1)*100:null;
+  const changeValue=previous!==null&&Number.isFinite(previous)?Number(r.close)-previous:null;
+  return {...r,close:Number(r.close),changeValue,changePct:stated??computed,computedFromClose:stated===null&&computed!==null};
+ }).slice(-20);
+}
+function historyDeltaUnit(){return String(selectedPulseSymbol||'').startsWith('^')?'pts':'₹'}
+function historyDeltaText(change){
+ const v=nullableQuoteNumber(change);if(v===null)return '—';
+ const val=Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+ return `${v>0?'+':v<0?'−':''}${val}`;
+}
+function renderPulseJournal(){
+ const rows=selectedHistoricalRows(),ct=rows.length;
+ const dailyTitle=document.getElementById('historyTitle');
+ if(dailyTitle)dailyTitle.textContent=`${activeSymbolName()} · 20 Trading Sessions (Daily Close)`;
+ document.getElementById('trialProgress').textContent=`${ct} / 20 completed daily closes · ${activeSymbolName()}`;
+ document.getElementById('trialBar').style.width=`${Math.min(100,ct*5)}%`;
+ document.getElementById('historySourceStatus').textContent=ct?`Historical closes from ${latestPulsePack?.source||'last successful saved source'} · latest ${rows[ct-1].date}. Weekends and exchange holidays excluded. Historical observations are not backtested Pulse predictions.`:'No verified daily history yet. Select a symbol or refresh; source access may be temporarily blocked.';
+ const changeHeader=document.getElementById('priceChangeHeading');if(changeHeader)changeHeader.textContent=historyDeltaUnit()==='pts'?'Change (pts)':'Change (₹)';
+ const body=document.getElementById('trialRows');body.replaceChildren();
+ if(!rows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent='No historical price data available; no values invented.';tr.appendChild(td);body.appendChild(tr)}
+ else for(const r of rows.slice().reverse()){
+   const tr=document.createElement('tr');
+   const dateCell=document.createElement('td');dateCell.textContent=r.date;
+   const closeCell=document.createElement('td');closeCell.textContent=fmtNum(r.close);
+   const moveCell=document.createElement('td');
+   const value=nullableQuoteNumber(r.changePct);
+   if(value!==null){const chip=document.createElement('span');chip.className='history-move '+(value>0?'up':value<0?'down':'flat');chip.textContent=fmtPct(value);chip.title='Change from preceding trading close';moveCell.appendChild(chip)}else moveCell.textContent='—';
+   const deltaCell=document.createElement('td');
+   const absChange=nullableQuoteNumber(r.changeValue);
+   if(absChange!==null){
+     const deltaBadge=document.createElement('span');
+     deltaBadge.className='history-price-change '+(absChange>0?'up':absChange<0?'down':'flat');
+     deltaBadge.textContent=historyDeltaText(absChange);
+     deltaBadge.title='Close-to-close change in '+(historyDeltaUnit()==='pts'?'index points':'rupees');
+     deltaCell.appendChild(deltaBadge);
+   }else{deltaCell.textContent='—';deltaCell.title='Earlier closing price unavailable'}
+   tr.append(dateCell,closeCell,moveCell,deltaCell);body.appendChild(tr);
+ }
+ renderHistoryChart(rows);
+}
+function exportPulseJournal(){
+ const rows=selectedHistoricalRows();if(!rows.length){document.getElementById('trialProgress').textContent='No verified daily closes available to export';return}
+ const cells=[['Symbol','Date','Close','Daily change %','Price change','Price change unit','Source'],...rows.map(r=>[selectedPulseSymbol,r.date,r.close,r.changePct??'',r.changeValue??'',historyDeltaUnit(),latestPulsePack?.source||'saved historical source'])];
+ const csv=cells.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=`MM9_${selectedPulseSymbol.replace(/\W/g,'_')}_20day_history.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function maybeRefreshPulse(){
+ // A share has no fresh intraday candle after the Indian equity session closes.
+ // Retry at most once per 2 minutes off-hours, unless the user explicitly requests it.
+ if(selectedFrame==='current'&&!marketOpenNow()&&lastPulseAttemptMs&&Date.now()-lastPulseAttemptMs<120000)return;
+ const key=intervalRefreshKey();
+ if(selectedFrame==='current'&&selectedPulseSymbol==='^NSEI')return;
+ const now=calendarIST();
+ const todayStillClosing=selectedFrame==='d1'&&now.min>=930&&now.min<=970&&latestPulsePack?.periods?.d1?.sessionDate!==now.date;
+ const delayedCandle=selectedFrame!=='d1'&&selectedFrame!=='current'&&(!latestPulsePack?.periods?.[selectedFrame]);
+ const retry=(todayStillClosing||delayedCandle)&&Date.now()-lastPulseAttemptMs>60000;
+ if(!pulseFetchActive&&(!latestPulsePack||lastPulseRefreshKey!==key||retry))loadWatchPulse(retry);
+}
+
+
+// Participant positions are EOD open interest, not trade confirmations or predictions.
+let posState=null,posSelected='FII',posFetching=false,posLastChecked=0,posUpdateNote='';
+const POS_GROUPS=['FII','DII','PRO','RETAIL'];
+const POS_COLUMNS={future:['Future Index Long','Future Index Short'],call:['Option Index Call Long','Option Index Call Short'],put:['Option Index Put Long','Option Index Put Short']};
+function posFormat(n,sign=false){if(!Number.isFinite(Number(n)))return '—';const v=Number(n);return (sign&&v>0?'+':'')+v.toLocaleString('en-IN',{maximumFractionDigits:0})}
+function posDateFmt(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s||''))return 'Date not available';return new Date(s+'T12:00:00+05:30').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}
+function posDateFromName(name){const a=String(name||'').match(/fao_participant_oi_(\d{2})(\d{2})(\d{4})\.csv$/i);if(!a)return null;const d=`${a[3]}-${a[2]}-${a[1]}`;const x=new Date(d+'T12:00:00Z');return Number.isFinite(+x)&&x.toISOString().slice(0,10)===d?d:null;}
+function posParseCsv(raw){
+ const lines=String(raw).replace(/^\uFEFF/,'').split(/\r?\n/).filter(s=>s.trim());
+ const parsed=lines.map(line=>{const out=[];let b='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(quoted&&line[i+1]==='"'){b+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){out.push(b.trim());b='';}else b+=c;}out.push(b.trim());return out;});
+ const normal=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const headerIndex=parsed.findIndex(r=>r.some(c=>normal(c)==='clienttype')&&r.some(c=>normal(c)==='futureindexlong'));
+ if(headerIndex<0)throw Error('Please use the NSE F&O participant-wise open-interest CSV.');
+ const header=parsed[headerIndex].map(normal);
+ const required=['clienttype','futureindexlong','futureindexshort','optionindexcalllong','optionindexcallshort','optionindexputlong','optionindexputshort'];
+ if(!required.every(k=>header.includes(k)))throw Error('The selected file is missing required index F&O columns.');
+ const rows={};for(const row of parsed.slice(headerIndex+1)){
+  const p=normal(row[header.indexOf('clienttype')]);const key=p==='client'?'RETAIL':p==='fii'?'FII':p==='dii'?'DII':p==='pro'?'PRO':null;
+  if(!key)continue;const obj={};for(const k of required.slice(1)){
+    const s=String(row[header.indexOf(k)]??'').replace(/[,\s]/g,'');if(!/^-?\d+$/.test(s))throw Error('A contract position is missing or invalid.');obj[k]=Number(s);
+  }rows[key]=obj;
+ }
+ if(POS_GROUPS.some(k=>!rows[k]))throw Error('The file must contain FII, DII, Pro and Client rows.');
+ return rows;
+}
+function posAdaptRows(rows){const out={};for(const group of POS_GROUPS){const r=rows[group];if(!r)continue;out[group]={};for(const kind of Object.keys(POS_COLUMNS)){const [l,s]=POS_COLUMNS[kind].map(k=>k.toLowerCase().replace(/[^a-z0-9]/g,''));out[group][kind]={long:r[l],short:r[s],net:r[l]-r[s]};}}return out;}
+function posCacheSave(data){try{localStorage.setItem('mm9ParticipantEOD',JSON.stringify({savedAt:Date.now(),data}));}catch(_){}}
+function posCacheLoad(){try{const x=JSON.parse(localStorage.getItem('mm9ParticipantEOD')||'null');return x?.data?.current?.FII?x.data:null}catch(_){return null}}
+function posNetChange(group,kind){const cur=posState?.current?.[group]?.[kind]?.net,old=posState?.previous?.[group]?.[kind]?.net;return Number.isFinite(cur)&&Number.isFinite(old)?cur-old:null;}
+function posMarketContext(){
+ const n=marketData?.nifty||{},v=marketData?.vix||{};
+ const marketDate=Number.isFinite(Number(marketData?.asOfEpoch))?new Date(Number(marketData.asOfEpoch)).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}):null;
+ const matching=posState?.date&&marketDate===posState.date;
+ const nq=Number.isFinite(n.price)&&n.price>0?`${fmtNum(n.price)} (${fmtPct(n.pct)})`:'Unavailable';
+ const vq=Number.isFinite(v.price)&&v.price>0?`${fmtNum(v.price)} (${fmtPct(v.pct)})`:'Unavailable';
+ const breadth=marketData?.breadth||{};
+ const breadthValue=Number.isFinite(breadth.adv)&&Number.isFinite(breadth.dec)?`${breadth.adv} rising / ${breadth.dec} falling`:'Unavailable';
+ const sectors=sectorStats();const sectorValue=sectors?`${sectors.positive} / ${sectors.total} positive`:'Unavailable';
+ const model=Number.isFinite(n.pct)?scoreModel():null;
+ return `<div class="detailsection"><h4>Compare with market direction</h4>
+ <div class="detailgrid">${detailCell('Nifty 50',nq,cls(n.pct))}${detailCell('India VIX',vq,cls(v.pct))}${detailCell('Nifty 50 breadth',breadthValue)}${detailCell('Monitored index strength',sectorValue)}${model?detailCell('Market Pulse',`${model.score>0?'+':''}${model.score} · ${model.state}`):detailCell('Market Pulse','Unavailable')}${detailCell('Date alignment',matching?'Same session':'Check dates')}</div>
+ <p class="position-note">${matching?'The daily participant report and the Nifty observation refer to the same date.':'The derivatives report and market readings may come from different trading dates; do not treat them as same-session confirmation.'} Breadth and sector index observations may also have separate timestamps. A Pulse score measures observed market conditions, not the probability of a trade succeeding.</p>
+ <p class="position-note">A position change is not proof of executed purchases, and option writers or hedgers may create the opposite exposure. The four participant groups are not independent votes that can simply be added together.</p></div>`;
+}
+function posCue(kind,delta){if(!Number.isFinite(delta))return ['No comparison','flat'];const directional=kind==='put'?-delta:delta;return directional>0?['Positive tilt','up']:directional<0?['Negative tilt','down']:['No change','flat'];}
+function posRows(group){
+ const labels={future:'Index futures',call:'Index calls',put:'Index puts'};
+ return Object.keys(labels).map(kind=>{const x=posState.current?.[group]?.[kind];if(!x)return '';
+  const delta=posNetChange(group,kind);const [cue,clsName]=posCue(kind,delta);
+  return `<tr><td><strong>${labels[kind]}</strong><div class="position-note">Long ${posFormat(x.long)} · Short ${posFormat(x.short)}</div></td><td><strong class="${cls(x.net)}">${posFormat(x.net,true)}</strong></td><td><strong class="${cls(delta)}">${delta==null?'—':posFormat(delta,true)}</strong></td><td><span class="${clsName}">${cue}</span></td></tr>`;
+ }).join('');
+}
+function posHeadline(){const n=posState?.current?.FII?.future?.net,d=posNetChange('FII','future');if(n==null)return 'Index futures data pending';const stance=n>0?'net long':n<0?'net short':'balanced';const move=d==null?'previous-session comparison unavailable':d>0?'net exposure increased':d<0?'net exposure decreased':'unchanged since the previous session';return `FIIs are ${stance} in index futures; ${move}.`}
+function posCsvUI(){return `<details class="position-upload"><summary style="cursor:pointer;font-weight:850;color:var(--navy)">Import an NSE report (optional)</summary><p class="position-note" style="margin-top:8px">Only needed if automatic updates are unavailable. Download the “F&O-Participant wise Open Interest (CSV)” report from NSE.</p><label for="posCurrentFile">Report for the latest available trading day</label><input id="posCurrentFile" type="file" accept=".csv,text/csv"><label for="posPreviousFile">Previous trading day (optional)</label><input id="posPreviousFile" type="file" accept=".csv,text/csv"><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button class="btn primary" onclick="posImportFiles()">Import report</button><a class="btn soft" href="https://www.nseindia.com/all-reports-derivatives" rel="noopener noreferrer" target="_blank" style="text-decoration:none">Find NSE report ↗</a></div><div class="position-note" id="posImportStatus" style="margin-top:6px"></div></details>`;}
+function posAutoStatus(){
+ const current=posState?.current?.FII;
+ if(posFetching)return `<div class="position-feedstatus"><span class="position-live-mark">◌</span><div><b>Checking the latest daily report</b><div class="position-note">Published NSE figures are checked after trading hours.</div></div></div>`;
+ if(current){const line=posUpdateNote||`Showing the latest verified report available to this device.`;
+  return `<div class="position-feedstatus"><span class="position-live-mark">✓</span><div><b>Last available report · ${posDateFmt(posState.date)}</b><div class="position-note">${escText(line)} Figures update once per trading day.</div></div></div>`;}
+ return `<div class="position-feedstatus"><span class="position-live-mark">i</span><div><b>Daily report not available yet</b><div class="position-note">${escText(posUpdateNote||'The latest NSE participant figures could not be retrieved. You can try again or use the published NSE report.')}</div></div></div>`;
+}
+function posAutoActions(){return `<div class="position-actions"><button class="btn primary" onclick="posRefresh(true)" ${posFetching?'disabled':''}>${posFetching?'Checking…':'Check latest report'}</button><a class="btn soft" href="https://www.nseindia.com/all-reports-derivatives" target="_blank" rel="noopener noreferrer" style="text-decoration:none">NSE reports ↗</a></div>`;}
+function posDetailBody(){
+ if(!posState?.current?.FII)return `${posAutoStatus()}${posAutoActions()}${posCsvUI()}`;
+ const tabs=POS_GROUPS.map(x=>`<button class="${posSelected===x?'on':''}" onclick="posChoose('${x}')">${x==='RETAIL'?'Client / Retail':x}</button>`).join('');
+ const p=posState.current[posSelected],d=posNetChange(posSelected,'future');
+ return `${posAutoStatus()}
+ <div class="detailgrid">${detailCell('Index futures · Net OI',posFormat(p.future.net,true),cls(p.future.net))}${detailCell('Change vs previous report',d==null?'—':posFormat(d,true),cls(d))}</div>
+ <div class="position-controls">${tabs}</div>
+ <div class="position-chartbox"><b>${posSelected==='RETAIL'?'Client / Retail':posSelected} · Index derivatives</b><div class="position-note">Net = long − short. Change = this trading session's net OI − previous session's net OI. Measured in contracts.</div></div>
+ <div style="overflow-x:auto"><table class="position-matrix"><thead><tr><th>Instrument</th><th>Net OI</th><th>Change</th><th>Positioning</th></tr></thead><tbody>${posRows(posSelected)}</tbody></table></div>
+ <div class="detailsection"><h4>What it means</h4><p class="position-note">${escText(posSelected==='FII'?posHeadline():`See whether ${posSelected==='RETAIL'?'client':posSelected} positions are building or reducing across futures, calls and puts.`)} An open-interest change can reflect a hedge, not necessarily a directional bet.</p></div>
+ ${posMarketContext()}
+ <div class="detailsection"><h4>Report dates</h4><p class="position-note">Latest available: ${posDateFmt(posState.date)} · Previous: ${posState.previousDate?posDateFmt(posState.previousDate):'Not yet available'}. Data is published at end of day, not in real time.</p>${posAutoActions()}</div>
+ ${posCsvUI()}`;
+}
+function renderPosPeek(){const el=document.getElementById('posFiiNet');if(!el)return;const n=posState?.current?.FII?.future?.net,d=posNetChange('FII','future');el.textContent=n==null?'—':posFormat(n,true);el.className=cls(n);const ch=document.getElementById('posFiiChange');ch.textContent=d==null?'—':posFormat(d,true);ch.className=cls(d);
+ document.getElementById('posPreviewFoot').textContent=posState?.date?`As of ${posDateFmt(posState.date)} · End-of-day open interest · ${posState.previousDate?'Previous session '+posDateFmt(posState.previousDate):'Comparison not yet available'}`:'Daily participant analysis · Latest available NSE report';}
+function posChoose(group){if(!POS_GROUPS.includes(group))return;posSelected=group;posRedraw(true)}
+function posRedraw(keepScroll=false){if(activeDetailKind!=='positioning')return;const sheet=document.getElementById('detailSheet');if(!sheet?.classList.contains('open'))return;const before=sheet.scrollTop;document.getElementById('detailBody').innerHTML=posDetailBody();if(keepScroll)sheet.scrollTop=before;}
+function openPositioningDetail(){showSheet('F&O Participant Positioning','FII · DII · PRO · Client · Daily analysis',posDetailBody());activeDetailKind='positioning';posRefresh(false);}
+async function posRefresh(force=false){
+ if(posFetching||(!force&&Date.now()-posLastChecked<2*3600000))return;
+ posFetching=true;posLastChecked=Date.now();posUpdateNote='';posRedraw(true);
+ try{
+  const res=await fetch(`${API_BASE}/api/positions${force?'?refresh=1':''}`,{cache:'no-store',signal:AbortSignal.timeout(22000)});
+  const data=await res.json();
+  if(res.ok&&data.ok&&data.current?.FII){
+   if(!posState||data.date>=posState.date){posState=data;posCacheSave(data)}
+   posUpdateNote=data.stored?'Showing a previously verified NSE report.':'Verified NSE participant-wise data.';
+  }else posUpdateNote=posState?.current?.FII?'No newer report was available. The previous verified report is retained.':'Unable to retrieve a verified daily report. Please try again later.';
+ }catch(_){posUpdateNote=posState?.current?.FII?'The source could not be checked. Your saved report is still available.':'Could not check the report at this time. Please try later.';}
+ finally{posFetching=false;renderPosPeek();posRedraw(true)}
+}
+async function posImportFiles(){const f=document.getElementById('posCurrentFile')?.files?.[0],p=document.getElementById('posPreviousFile')?.files?.[0],msg=document.getElementById('posImportStatus');if(!f){if(msg)msg.textContent='Choose the latest NSE open-interest CSV first.';return;}try{
+  const date=posDateFromName(f.name);if(!date)throw Error('Use the original NSE filename with its trading date.');
+  const current=posAdaptRows(posParseCsv(await f.text()));let previous=null,previousDate=null;
+  if(p){previousDate=posDateFromName(p.name);if(!previousDate||previousDate>=date)throw Error('The previous NSE report must have an earlier date.');previous=posAdaptRows(posParseCsv(await p.text()));}
+  posState={ok:true,date,previousDate,current,previous,sourceLabel:'NSE participant report',sourceUrl:'https://www.nseindia.com/all-reports-derivatives'};posCacheSave(posState);renderPosPeek();posRedraw(true);
+ }catch(e){if(msg)msg.textContent=e.message||'Could not read the selected NSE report.';}}
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
+ document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false);refreshNiftyBreadth(false);refreshSectorSnapshot(false);posRefresh(false)}window.scrollTo({top:0,behavior:'smooth'});
+}));
+window.addEventListener('load',()=>{
+ posState=posCacheLoad();renderPosPeek();
+ toggleBreadthWatchNav();
+ try{const saved=JSON.parse(localStorage.getItem('mm9IndiaGoldBenchmark')||'null');if(saved?.data?.kind==='india-daily-benchmark'&&Date.now()-saved.at<7*86400000)goldQuote=saved.data;}catch(_){}
+ renderGoldPeek();
+ renderMetalOverviews();
+ try{const ss=JSON.parse(localStorage.getItem('mm9IndiaSilverBenchmark')||'null');if(ss?.data?.kind==='india-daily-benchmark'&&Date.now()-ss.at<7*86400000)silverQuote=ss.data;}catch(_){}
+ renderMetalOverviews();
+ refreshGold(true);
+ refreshSilver(true);
+ seedFallbackTimeline();
+ marketData=JSON.parse(JSON.stringify(fallback));
+ // Never expose legacy seed quotes as live GIFT or live sector values on first load.
+ marketData.gift={price:null,pct:null,source:'Awaiting verified NSE GIFT price',asOf:null};
+ marketData.sectors=[];
+ const restored=marketStatus()==='Closed' ? restoreIndianSnapshot() : false;
+ // The Worker does not currently publish verified constituent breadth. Never display the old 32/18 seed as a current reading.
+ marketData.breadth=null;
+ if(!restored){
+   ['nifty','bank','sensex','vix','gift'].forEach(k=>marketData[k]={price:null,pct:null,source:'Not yet refreshed'});
+   marketData.sectors=[];
+   marketData.breadth=null;
+   marketData.timestamp='Awaiting live source data';
+   marketData.asOfEpoch=undefined;
+   marketData.mode='No verified quote yet';
+   timelinePoints=[];
+ }
+ restoreGiftSnapshot();
+ render();
+ if(!restored){
+   document.getElementById('pulseScore').textContent='—';document.getElementById('pulseState').textContent='CONNECTING';
+   document.getElementById('confidence').textContent='—';
+ }
+ document.getElementById('lastUpdate').textContent=restored?'Last market snapshot restored':'Source snapshot loaded';
+ document.getElementById('sourceMode').textContent=marketStatus()==='Closed'
+   ? 'Indian market closed · final close retained'
+   : 'Starting live refresh';
+ setupAuto();
+ refreshNseSession(true);
+ renderWatchPulse();
+ refreshNSEDirectory();
+ setTimeout(()=>loadWatchPulse(true),1100);setTimeout(()=>refreshNiftyBreadth(false),1600);setTimeout(()=>refreshGiftNifty(true),600);setTimeout(()=>refreshSectorSnapshot(true),800);
+ const ps=document.getElementById('proxyStatus');
+ if(ps) ps.textContent=API_BASE?`Connected: ${API_BASE}`:'Not configured yet';
+ setTimeout(()=>refreshAll(false),250);
+});
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='hidden'){
+   if(autoTimer)clearTimeout(autoTimer);
+   autoTimer=null;
+   return;
+ }
+ if(autoRefresh){
+   refreshNseSession(true);
+   armNextRefresh();
+   if(!lastRefreshCompletedAt || Date.now()-lastRefreshCompletedAt>=REFRESH_MS) refreshAll(false);
+   else updateCountdown();
+ }
+});
+window.addEventListener('focus',()=>{
+ if(autoRefresh&&(!lastRefreshCompletedAt || Date.now()-lastRefreshCompletedAt>=REFRESH_MS)) refreshAll(false);
+});
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>r.update().catch(()=>{})).catch(()=>{});

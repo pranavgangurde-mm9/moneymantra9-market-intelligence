@@ -870,18 +870,103 @@ async function marketResponse(request, ctx) {
 }
 
 
-// R5.2: compact quote batches to keep each Worker request under the Free CPU budget.
-// We never claim new exchange data until the returned quote epoch changes.
-function exchangeOpenForCache(group) {
-  // This controls source polling, not official exchange-holiday determination.
-  const zone=group==='india'?'Asia/Kolkata':'America/New_York';
-  const pieces=new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
-  const x=Object.fromEntries(pieces.map(p=>[p.type,p.value]));
-  if(x.weekday==='Sat'||x.weekday==='Sun')return false;
-  const minute=Number(x.hour)*60+Number(x.minute);
-  if(group==='india')return minute>=540&&minute<=955;
-  // Keep checking global quotes during European/US overlap as well as the US session.
-  return minute>=240&&minute<=1200;
+
+// NSE cash-market session calendar. The schedule is separated from quote retrieval;
+// the calendar can be updated using MM9_NSE_SESSIONS without deploying a new frontend.
+const MM9_NSE_HOLIDAYS_2026=new Set([
+ '2026-01-15','2026-01-26','2026-03-03','2026-03-26','2026-03-31','2026-04-03',
+ '2026-04-14','2026-05-01','2026-05-28','2026-06-26','2026-09-14','2026-10-02',
+ '2026-10-20','2026-11-10','2026-11-24','2026-12-25'
+]);
+// The special date is a preloaded example of a verified circular, not the rule for future weekends.
+const MM9_PUBLISHED_SESSIONS={
+ '2026-11-08':{type:'special',name:'Diwali Muhurat Trading',preOpen:'14:05',open:'14:20',close:'15:30'}
+};
+const MM9_CLOCK_RE=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
+function mm9NseMinute(s){const [a,b]=s.split(':').map(Number);return a*60+b}
+function mm9NseDateParts(at=new Date()){
+ const data=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(at).map(p=>[p.type,p.value]));
+ return {date:`${data.year}-${data.month}-${data.day}`,weekday:data.weekday,minute:Number(data.hour)*60+Number(data.minute)};
+}
+function mm9NseSchedule(entry){
+ if(entry===null||entry==='closed'||entry?.type==='closed')return {type:'holiday',name:typeof entry==='object'?String(entry.name||'Exchange holiday').slice(0,85):'Exchange holiday',preOpen:null,open:null,close:null};
+ if(!entry||typeof entry!=='object'||!['regular','special','early-close','weekend'].includes(entry.type))return null;
+ const preOpen=entry.preOpen||null,open=entry.open,close=entry.close;
+ if((preOpen!==null&&!MM9_CLOCK_RE.test(preOpen))||!MM9_CLOCK_RE.test(open)||!MM9_CLOCK_RE.test(close))return null;
+ if((preOpen!==null&&mm9NseMinute(preOpen)>mm9NseMinute(open))||mm9NseMinute(open)>=mm9NseMinute(close))return null;
+ return {type:entry.type,name:String(entry.name||'Special trading session').slice(0,85),preOpen,open,close};
+}
+function mm9NseEnvCalendar(env){
+ let custom={};try{const raw=String(env?.MM9_NSE_SESSIONS||'');if(raw.length>18000)throw Error('Too many entries');const obj=raw?JSON.parse(raw):{};if(obj&&typeof obj==='object'&&!Array.isArray(obj))custom=obj;}catch(_){}
+ return custom;
+}
+function mm9NsePublishedSchedule(at=new Date(),env={}){
+ const t=mm9NseDateParts(at),custom=mm9NseEnvCalendar(env),validKey=/^\d{4}-\d{2}-\d{2}$/.test(t.date);
+ const official=Object.hasOwn(MM9_PUBLISHED_SESSIONS,t.date)?MM9_PUBLISHED_SESSIONS[t.date]:null;
+ const hasOverride=validKey&&Object.hasOwn(custom,t.date);
+ const selected=hasOverride?mm9NseSchedule(custom[t.date]):official?mm9NseSchedule(official):null;
+ if(selected)return {...selected,date:t.date,source:hasOverride?'Confirmed session override':'Published NSE circular',verified:hasOverride||!!official};
+ if(MM9_NSE_HOLIDAYS_2026.has(t.date))return {date:t.date,type:'holiday',name:'NSE trading holiday',preOpen:null,open:null,close:null,source:'Published NSE holiday calendar',verified:true};
+ if(['Sat','Sun'].includes(t.weekday))return {date:t.date,type:'weekend-closed',name:'Weekend',preOpen:null,open:null,close:null,source:'Regular trading calendar',verified:false};
+ return {date:t.date,type:'regular',name:'Regular NSE equity session',preOpen:'09:00',open:'09:15',close:'15:30',source:'Regular trading timetable',verified:false};
+}
+function mm9NseDeriveStatus(schedule,at=new Date()){
+ const min=mm9NseDateParts(at).minute;
+ if(!schedule.open)return 'Closed';
+ if(schedule.preOpen&&min>=mm9NseMinute(schedule.preOpen)&&min<mm9NseMinute(schedule.open))return 'Pre-Open';
+ if(min>=mm9NseMinute(schedule.open)&&min<mm9NseMinute(schedule.close))return 'Open';
+ return 'Closed';
+}
+function mm9NseReadTradeDate(raw){
+ const iso=String(raw||'').match(/^(\d{4})-(\d{2})-(\d{2})/);if(iso)return `${iso[1]}-${iso[2]}-${iso[3]}`;
+ const m=String(raw||'').match(/^(\d{1,2})[-\s]([A-Za-z]{3})[-\s](\d{4})/);
+ const mo={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+ return m&&mo[m[2].toLowerCase()]?`${m[3]}-${mo[m[2].toLowerCase()]}-${m[1].padStart(2,'0')}`:null;
+}
+function mm9NseParseMarketStatus(obj,today){
+ const rows=Array.isArray(obj?.marketState)?obj.marketState:Array.isArray(obj?.data?.marketState)?obj.data.marketState:[];
+ const row=rows.find(r=>['capitalmarket','capitalmarkets','cashmarket','equity','equities','nsecm','cm'].includes(String(r.market||'').toLowerCase().replace(/[^a-z]/g,'')));
+ if(!row||mm9NseReadTradeDate(row.tradeDate)!==today)return null;
+ const raw=String(row.marketStatus||'').toLowerCase();
+ if(/^open$/.test(raw)||/normal.market.open|market is open/.test(raw))return 'Open';
+ if(/pre.?open/.test(raw))return 'Pre-Open';
+ if(/^clos(e|ed)$/.test(raw)||/market is closed/.test(raw))return 'Closed';
+ return null;
+}
+let mm9SessionInFlight=null;
+async function mm9SessionRecord(request,ctx,env,at=new Date(),useProvider=true){
+ const schedule=mm9NsePublishedSchedule(at,env),calculated=mm9NseDeriveStatus(schedule,at);
+ const responseBase={ok:true,market:'NSE cash equities',date:schedule.date,state:calculated,openNow:calculated==='Open',
+   sessionType:schedule.type,sessionName:schedule.name,preOpen:schedule.preOpen,open:schedule.open,close:schedule.close,
+   verified:schedule.verified,source:schedule.source,checkedAt:new Date().toISOString(),timeZone:'Asia/Kolkata'};
+ // Historical evaluations always use only that date's published schedule.
+ if(!useProvider||Math.abs(Date.now()-at.getTime())>90000)return responseBase;
+ const key=new Request(new URL(request.url).origin+'/api/market-session?v=r530');
+ const saved=await caches.default.match(key);
+ if(saved){try{return await saved.json()}catch(_){}}
+ if(!mm9SessionInFlight){
+  mm9SessionInFlight=(async()=>{
+   let result=responseBase;
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),3000);
+   try{
+    const r=await fetch('https://www.nseindia.com/api/marketStatus',{signal:controller.signal,
+      headers:{accept:'application/json',referer:'https://www.nseindia.com/', 'user-agent':'Mozilla/5.0'},cf:{cacheTtl:25,cacheEverything:true}});
+    if(r.ok){const raw=await r.json();const state=mm9NseParseMarketStatus(raw,schedule.date);
+      if(state){result={...responseBase,state,openNow:state==='Open',source:'NSE exchange market status',verified:true,observedAt:new Date().toISOString()}}}
+   }catch(_){}finally{clearTimeout(timer)}
+   const record=json(result,200,{'cache-control':'public,max-age=45,s-maxage=45'});
+   if(ctx?.waitUntil)ctx.waitUntil(caches.default.put(key,record.clone()));
+   return result;
+  })().finally(()=>{mm9SessionInFlight=null});
+ }
+ return mm9SessionInFlight;
+}
+
+// R5.3.0: Both frontend and Worker use the same session record. Do not infer session from weekday alone.
+function exchangeOpenForCache(group,at=new Date(),env={}) {
+ if(group==='india')return mm9NseDeriveStatus(mm9NsePublishedSchedule(at,env),at)==='Open';
+ const x=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'America/New_York',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(at).map(p=>[p.type,p.value]));
+ return !['Sat','Sun'].includes(x.weekday)&&Number(x.hour)*60+Number(x.minute)>=240&&Number(x.hour)*60+Number(x.minute)<=1200;
 }
 const QUOTE_GROUPS={
   india:['nifty','bank','sensex','vix'],
@@ -892,12 +977,13 @@ const SECTOR_QUOTE_BATCHES=[
   ['Metal','Realty','Energy','PSU Bank'],
   ['Financial Services','Infrastructure','Media']
 ];
-async function fastQuoteBatch(request,ctx){
+async function fastQuoteBatch(request,ctx,env){
   const u=new URL(request.url),group=u.searchParams.get('group');
   if(!Object.hasOwn(QUOTE_GROUPS,group)) return json({ok:false,error:'Use group=india or global'},400,{'cache-control':'no-store'});
-  const active=exchangeOpenForCache(group);
+  const session=group==='india'?await mm9SessionRecord(request,ctx,env):null;
+  const active=group==='india'?session.openNow:exchangeOpenForCache(group);
   const ttl=active?14:90; // Live polling around 15s; long-lived close snapshots off-session.
-  const key=new Request(u.origin+'/api/live-quotes?group='+group+'&v=r52');
+  const key=new Request(u.origin+'/api/live-quotes?group='+group+'&v=r530-'+(active?'open':'closed'));
   const hit=await caches.default.match(key);if(hit)return hit;
   const entries=await Promise.all(QUOTE_GROUPS[group].map(async k=>{
     try{
@@ -1596,8 +1682,9 @@ export default {
     if ((url.pathname === "/api/city-gold" || url.pathname === "/api/city-gold/") && request.method === "GET") {
       return cityGoldEndpoint(request,env,ctx);
     }
+    if (url.pathname === "/api/market-session" && request.method === "GET") return json(await mm9SessionRecord(request,ctx,env),200,{"cache-control":"public, max-age=30"});
     if (url.pathname === "/api/live-quotes" && request.method === "GET") {
-      return fastQuoteBatch(request,ctx);
+      return fastQuoteBatch(request,ctx,env);
     }
     if (url.pathname === "/api/sector-quotes" && request.method === "GET") {
       return sectorQuoteBatch(request,ctx);
