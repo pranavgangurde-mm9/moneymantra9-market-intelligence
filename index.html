@@ -241,20 +241,118 @@ main{padding:12px}
 .mm9-policy-strip{position:relative;z-index:15}
 .mm9-policy-strip a,.mm9-policy-foot a,.mm9-compliance-card a{position:relative;pointer-events:auto;touch-action:manipulation}
 
+
+/* R5.2.3 — Nifty 50 constituent breadth explorer */
+.breadth-action{display:block;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;border-radius:12px;padding:0;color:inherit;font:inherit}
+.breadth-action:focus-visible{outline:3px solid #62b69c;outline-offset:4px}.breadth-action .mini{height:100%;transition:background .2s,border-color .2s}
+.breadth-action:hover .mini,.breadth-action:focus-visible .mini{background:#eff8f5;border-color:#91c7b8}
+.breadth-hint{font-size:10px;color:#466877;margin-top:8px}
+.breadth-layer{position:fixed;inset:0;z-index:650;background:rgba(17,35,49,.62);display:flex;justify-content:center;align-items:flex-end}
+.breadth-drawer{width:min(690px,100%);height:min(84dvh,810px);background:#fbfdfc;border-radius:22px 22px 0 0;box-shadow:0 -10px 35px #0b20203d;display:flex;flex-direction:column;min-height:300px;overflow:hidden}
+.breadth-heading{padding:14px 16px 8px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.breadth-heading h3{margin:0;font-size:17px}.breadth-close{width:36px;height:36px;border-radius:50%;border:1px solid #d9e3df;background:white;color:#263d4a;font-size:21px;flex:0 0 36px}
+.breadth-toolbar{padding:0 15px 12px;border-bottom:1px solid #e0e8e5;display:grid;gap:9px}
+.breadth-modes{display:flex;gap:5px;overflow-x:auto;padding:2px 0 4px}
+.breadth-modes button{border-radius:999px;padding:7px 10px;flex:0 0 auto;border:1px solid #d9e4e1;background:white;color:#15394b;font-weight:800;font-size:11px}
+.breadth-modes button.active{color:white;background:#113950;border-color:#113950}
+.breadth-filter-row{display:flex;gap:7px;align-items:center}
+.breadth-filter-row input{min-width:0;flex:1;padding:10px;border:1px solid #d7e3df;border-radius:10px;font-size:12px}
+.breadth-filter-row select{max-width:48%;border:1px solid #d7e3df;background:white;border-radius:10px;padding:9px 4px;color:#173c50;font-size:11px}
+.breadth-results{overflow-y:auto;padding:8px 14px 15px;flex:1;overscroll-behavior:contain}
+.breadth-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 6px;border-bottom:1px solid #e7eeeb}
+.breadth-row input{width:17px;height:17px;accent-color:#197b62;cursor:pointer}.breadth-stock-link{font:inherit;border:0;background:transparent;text-align:left;cursor:pointer;min-width:0;color:#18384a}
+.breadth-stock-link b{display:block;font-size:12px}.breadth-stock-link small{display:block;color:#6f7c81;font-size:10px;margin-top:3px;white-space:normal}
+.breadth-stock-link:hover b{text-decoration:underline}.breadth-figures{text-align:right;white-space:nowrap}
+.breadth-figures strong{display:block;font-size:12px}.breadth-figures small{display:block;color:#62747e;font-size:10px;margin-top:3px}
+.breadth-figures .up{color:#08764d}.breadth-figures .down{color:#b53d48}.breadth-figures .flat{color:#68777a}
+.breadth-footer{padding:10px 15px;border-top:1px solid #dce5e2;background:#fff;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.breadth-footer button,.breadth-watch-nav button{border:1px solid #cddbd7;border-radius:10px;background:#edf4f1;color:#113950;font-size:11px;font-weight:800;padding:9px 11px;cursor:pointer}
+.breadth-footer button.primary{background:#113950;color:#fff;border-color:#113950}
+.breadth-footer button:disabled,.breadth-watch-nav button:disabled{opacity:.4;cursor:not-allowed}
+.breadth-watch-nav{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 0;margin-top:6px;border-top:1px solid #e0e7e4}
+.breadth-watch-nav span{font-size:10px;font-weight:800;color:#426075;flex:1;min-width:115px}
+@media(min-width:680px){.breadth-layer{align-items:center;padding:18px}.breadth-drawer{border-radius:20px}}
+@media(max-width:360px){.breadth-toolbar{padding:0 10px 10px}.breadth-filter-row{flex-wrap:wrap}.breadth-filter-row select{max-width:100%;flex:1}.breadth-row{padding:10px 1px}}
+
+
+/* R5.2.4: Infrastructure classifications and overlap transparency */
+.sector-theme-tag,.sector-overlap-tag{display:inline-block;vertical-align:middle;margin-left:7px;font-size:9px;letter-spacing:0;font-weight:700;padding:3px 6px;border-radius:7px;color:#85651e;background:#fff3d4}
+.sector-overlap-tag{color:#536b78;background:#e9f1f4}
+.infra-category{border:1px solid var(--line);border-radius:12px;margin:8px 0;background:#fff;overflow:hidden}
+.infra-category summary{cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px;font-weight:800;font-size:12px;list-style:none}
+.infra-category summary::-webkit-details-marker{display:none}
+.infra-category .infra-count{margin-left:auto;border-radius:99px;background:#f0f5f5;color:#24465a;font-size:10px;padding:4px 8px}
+.infra-category .infra-stocks{display:flex;flex-wrap:wrap;gap:7px;padding:0 10px 12px}
+.infra-hint{font-size:11px;color:var(--muted);line-height:1.5}
+.infra-summary{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:11px;font-weight:800;margin:10px 0}
+
+/* Industry groups and company exploration */
+.sector-directory{display:flex;flex-direction:column;gap:10px;margin-top:9px}
+.sector-dir-top{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.sector-dir-search{display:block;width:100%;min-width:0;box-sizing:border-box;background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font:inherit;font-size:12px;color:var(--ink)}
+.sector-dir-groups details{margin:7px 0;border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.sector-dir-groups summary{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;font-size:12px;font-weight:800;list-style:none;padding:12px}
+.sector-dir-groups summary::-webkit-details-marker{display:none}
+.sector-dir-groups summary small{font-size:10px;color:var(--muted);font-weight:650;white-space:nowrap}
+.sector-dir-items{padding:0 10px 12px;display:flex;gap:7px;flex-wrap:wrap}
+.sector-dir-items button{border:1px solid #d8e4e1;background:#f1f7f5;border-radius:9px;color:#163c51;text-align:left;cursor:pointer;padding:9px 11px;font-size:11px;font-weight:700;max-width:100%;line-height:1.35}
+.sector-dir-items button span{display:block;color:#71818b;font-weight:500;font-size:10px}
+.sector-dir-note{font-size:11px;color:#667982;line-height:1.5}
+.sector-dir-links a{display:inline-block;font-size:11px;margin:5px 8px 0 0;color:#154565;font-weight:700}
+.breadth-figures .stock-price{color:#204457;font-weight:800;font-size:11px}
+
+/* Participant-wise positioning, compact, source-dated EOD view */
+.position-peek{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.position-kicker{font-size:10px;color:#6E7A84;line-height:1.4;margin-top:3px}
+.position-pills{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 7px}
+.position-pill{border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0}
+.position-pill small{display:block;color:var(--muted);font-size:10px}
+.position-pill strong{display:block;font-size:15px;margin:3px 0 0;font-variant-numeric:tabular-nums}
+.position-controls{display:flex;gap:6px;overflow:auto;margin:12px 0;scrollbar-width:thin}
+.position-controls button{white-space:nowrap;flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:9px 12px;background:#F2F5F4;color:var(--navy);font-size:11px;font-weight:850}
+.position-controls button.on{background:var(--navy);color:#fff}
+.position-matrix{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:11px}
+.position-matrix th{text-align:right;color:var(--muted);font-size:10px;padding:10px 3px;border-bottom:1px solid var(--line)}
+.position-matrix td{padding:12px 3px;border-bottom:1px solid var(--line);text-align:right}
+.position-matrix th:first-child,.position-matrix td:first-child{text-align:left}
+.position-matrix td strong{font-size:12px;white-space:nowrap}
+.position-note{font-size:11px;line-height:1.55;color:var(--muted)}
+.position-upload{background:#F8FAF9;border:1px solid var(--line);padding:11px;border-radius:13px;margin-top:12px}
+.position-upload label{display:block;margin:9px 0 4px;font-weight:800;font-size:10px}
+.position-upload input{width:100%;font-size:11px;min-width:0}
+.position-chartbox{padding:11px;background:#F5F9F7;border:1px solid #D7E8DE;border-radius:13px;margin-top:12px}
+@media(max-width:360px){.position-matrix{font-size:10px}.position-matrix th,.position-matrix td{padding-left:2px;padding-right:2px}}
+
+/* Participant daily report: no upload requirement for ordinary users. */
+.position-feedstatus{border:1px solid #DAE9E5;background:#F3F8F6;border-radius:14px;padding:12px;display:flex;align-items:flex-start;gap:10px;margin:0 0 12px;line-height:1.5}
+.position-feedstatus b{font-size:12px;color:#12384e}.position-live-mark{display:grid;place-items:center;border-radius:99px;background:#E2EEE9;color:#137656;min-width:29px;height:29px;font-size:17px;font-weight:800}
+.position-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.position-actions>*{flex:1;min-width:128px;text-align:center}
+.position-upload summary{list-style:none}.position-upload summary::-webkit-details-marker{display:none}.position-upload summary:after{content:'⌄';float:right}
+.position-upload[open] summary:after{content:'⌃'}
 </style>
-<meta name="mm9-build" content="2026.10.31-r52-1-mobile-refresh-layout"/>
+<meta name="mm9-build" content="2026.11.07-r528-automatic-participants"/>
 </head>
 <body>
+<div id="breadthLayer" class="breadth-layer" role="dialog" aria-modal="true" aria-label="Nifty 50 constituent performance" hidden style="display:none" onclick="if(event.target===this)closeBreadthExplorer()">
+ <div class="breadth-drawer">
+  <div class="breadth-heading"><div><h3>Nifty 50 · Stock Performance</h3><div id="breadthExplorerSource" class="ss" style="margin-top:5px">Loading the 50 constituent quotes…</div></div><button type="button" class="breadth-close" aria-label="Close stock list" onclick="closeBreadthExplorer()">×</button></div>
+  <div class="breadth-toolbar"><div class="breadth-modes" id="breadthModes">
+   <button type="button" data-bmode="adv" onclick="setBreadthMode('adv')">Advances</button><button type="button" data-bmode="dec" onclick="setBreadthMode('dec')">Declines</button><button type="button" data-bmode="all" onclick="setBreadthMode('all')">All 50</button><button type="button" data-bmode="flat" onclick="setBreadthMode('flat')">Unchanged</button>
+  </div><div class="breadth-filter-row"><input id="breadthSearch" type="search" placeholder="Search company or NSE ticker" aria-label="Search Nifty 50 companies" oninput="renderBreadthExplorer()"/><select id="breadthOrder" aria-label="Sort companies" onchange="renderBreadthExplorer()"><option value="top">Biggest gains first</option><option value="low">Biggest falls first</option><option value="name">Company name A–Z</option><option value="price">Highest price first</option></select></div></div>
+  <div id="breadthResults" class="breadth-results" aria-live="polite">Retrieving available Nifty 50 company data…</div>
+  <div class="breadth-footer"><span id="breadthSelectionCount" class="ss" style="flex:1">0 selected</span><button type="button" onclick="selectTopBreadthStocks(5)">Select first 5</button><button type="button" onclick="clearBreadthSelection()">Clear</button><button id="watchBreadthSelected" type="button" class="primary" onclick="watchBreadthSelected()" disabled>Watch selected</button></div>
+ </div>
+</div>
 <div class="app">
 <header class="topbar">
  <div class="brand">
   <div class="brand-left">
    <img class="brand-logo" src="brand-logo.png" alt="MoneyMantra 9"/>
-   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™ · Build R5.2.2</small></div>
+   <div><h1>MoneyMantra 9<br/>Market Intelligence</h1><small>Powered by Market Pulse Engine™</small></div>
   </div>
   <div id="marketPill" class="live-pill">● CONNECTING</div>
  </div>
-<div class="mm9-policy-strip" aria-label="App and policies"><a href="policies.html" class="mm9-legal-hub" aria-label="All public website policy and support pages">All policies &amp; support ↗</a><a href="pricing.html">₹199 planned access</a><a href="about.html">About</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="contact.html">Support</a></div>
+<div class="mm9-policy-strip" aria-label="App and policies"><a href="policies.html" class="mm9-legal-hub" aria-label="All public website policy and support pages">All policies &amp; support ↗</a><a href="pricing.html">Pricing</a><a href="about.html">About</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="contact.html">Support</a></div>
 </header>
 
 <div class="refreshbar">
@@ -285,7 +383,7 @@ main{padding:12px}
    </datalist>
    <button class="btn primary" onclick="submitStockSearch()">Watch</button>
   </div>
-  <div class="ss" id="tickerCatalogStatus" style="margin:7px 0">Loading the NSE equity directory through Cloudflare…</div>
+  <div class="ss" id="tickerCatalogStatus" style="margin:7px 0">Loading available NSE stocks…</div>
   <div class="quick-stocks">
    <button onclick="setMarketWatch()">Market (Nifty)</button>
    <button onclick="selectQuickStock('RELIANCE.NS')">Reliance</button>
@@ -293,6 +391,7 @@ main{padding:12px}
    <button onclick="selectQuickStock('TCS.NS')">TCS</button>
   </div>
   <div id="watchStatus" class="watch-status">Watching Indian Market · NSE stock lookup also available using the exchange ticker (.NS or .BO).</div>
+  <div id="breadthWatchNav" class="breadth-watch-nav"><span id="breadthWatchProgress">Selected stock 1 / 1</span><button type="button" onclick="stepBreadthWatch(-1)">← Previous</button><button type="button" onclick="stepBreadthWatch(1)">Next →</button><button type="button" onclick="clearBreadthWatch()">Clear list</button></div>
  </div>
  <div class="pulse-tabs" role="group" aria-label="Pulse timeframe">
    <button class="pulse-tab active" data-pulse-frame="current" aria-pressed="true" onclick="switchPulseFrame('current')">Current<small>15 sec check</small></button>
@@ -368,7 +467,7 @@ main{padding:12px}
 
  <div class="card">
   <h3>Broad Market Explanation · Nifty / Sensex</h3>
-  <div class="explain"><div style="font-size:18px">✦</div><div><div id="marketExplain">Refresh live data to build the current market explanation from the Worker response.</div><div id="explainSource" class="ss" style="margin-top:6px"></div></div></div>
+  <div class="explain"><div style="font-size:18px">✦</div><div><div id="marketExplain">Market explanation will appear when market information is available.</div><div id="explainSource" class="ss" style="margin-top:6px"></div></div></div>
  </div>
 
   <div class="card">
@@ -427,7 +526,7 @@ main{padding:12px}
 
  <div class="card">
   <h3>Global & Pre-Market Cues</h3>
-  <div class="market-feed-note" id="marketFeedNotice">Connecting to the MoneyMantra 9 Cloudflare market service. Public quote coverage may vary by index.</div>
+  <div class="market-feed-note" id="marketFeedNotice">Connecting to the MoneyMantra 9 market data service. Public quote coverage may vary by index.</div>
   <div class="signal"><div class="sl"><span id="giftDot" class="dot a"></span><div><div class="st">GIFT Nifty</div><div class="ss" id="giftSourceCaption">GIFT price is checked independently · verified quote time displayed below</div></div></div><div id="giftMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="nasdaqDot" class="dot b"></span><div><div class="st">Nasdaq Composite</div><div class="ss">US close / latest public quote</div></div></div><div id="nasdaqMarket" class="sv">--</div></div>
   <div class="signal"><div class="sl"><span id="spDot" class="dot b"></span><div><div class="st">S&P 500</div><div class="ss">US close / latest public quote</div></div></div><div id="spMarket" class="sv">--</div></div>
@@ -451,19 +550,26 @@ main{padding:12px}
 
   <div class="card clickable" role="button" tabindex="0" onclick="openSilverDetail()"><div class="gold-peek"><div class="gold-symbol" aria-hidden="true" style="background:#E9EEF1;color:#657A8A">◈</div><div style="flex:1;min-width:0"><div class="gold-title">Silver Watch <span class="badge">INDIA REFERENCE</span></div><div class="gold-subtitle">All India Bullion · 999 silver · India daily reference</div></div><div class="gold-arrow">Details ›</div></div><div class="gold-peek-metrics"><div class="gold-peek-kpi"><span>999 Silver / gram</span><b id="silverPeek">—</b></div><div class="gold-peek-kpi"><span>Per kilogram</span><b id="silverKilo">—</b></div></div><div id="silverPeekStatus" class="gold-status">Awaiting Indian benchmark…</div></div>
 
+  <div class="card" id="positionsCard">
+  <div class="position-peek"><div style="min-width:0"><h3 style="margin:0">F&O Participant Positioning</h3><div class="position-kicker">FII · DII · PRO · Retail · Daily positions</div></div><button class="btn primary" onclick="openPositioningDetail()">Explore ›</button></div>
+  <div class="position-pills"><div class="position-pill"><small>FII index futures · Net OI</small><strong id="posFiiNet">—</strong></div><div class="position-pill"><small>Change vs previous session</small><strong id="posFiiChange">—</strong></div></div>
+  <div id="posPreviewFoot" class="position-note">Latest published participant positions will appear here.</div>
+ </div>
+ 
   <div class="card">
    <h3>Nifty 50 Breadth</h3>
   <div class="grid2">
-   <div class="mini"><div class="k">Advances</div><div id="advVal" class="v up">--</div><div class="s">Nifty 50 constituents</div></div>
-   <div class="mini"><div class="k">Declines</div><div id="decVal" class="v down">--</div><div class="s">Nifty 50 constituents</div></div>
+   <button class="breadth-action" onclick="openBreadthExplorer('adv')" aria-label="See and sort Nifty 50 advancing companies"><div class="mini"><div class="k">Advances ↗</div><div id="advVal" class="v up">--</div><div class="s">Tap to see rising stocks</div></div></button>
+   <button class="breadth-action" onclick="openBreadthExplorer('dec')" aria-label="See and sort Nifty 50 declining companies"><div class="mini"><div class="k">Declines ↗</div><div id="decVal" class="v down">--</div><div class="s">Tap to see falling stocks</div></div></button>
   </div>
+  <div class="breadth-hint">Tap a count to compare stocks by today's change, choose several, or view a company on Home.</div>
   <div class="ss" style="margin-top:8px" id="breadthStamp">Waiting for source information</div>
  </div>
 
  <div class="card">
-  <h3>Indian Sector Pulse · NSE Sectoral Indices</h3>
-  <input id="sectorFilter" class="sector-filter" placeholder="Find a sector (IT, Auto, Pharma…)" aria-label="Filter Indian sectors" oninput="filterSectorRows()"/><div class="ss" style="margin-bottom:8px">12 monitored Indian sectors · tap a sector, then tap a constituent stock to watch it on Home.</div><div id="sectorList"></div>
-  <div class="ss" style="margin-top:8px" id="sectorStamp">Source timestamp will appear here.</div><div class="ss" style="margin-top:5px">These are Indian NSE sectoral indices (for example Nifty IT, Auto, Pharma, FMCG, Metal and Realty). They are not US/global sectors and they are not a sector breakdown of the Sensex itself.</div>
+  <h3>Indian Sector Pulse · NSE Sector & Thematic Indices</h3>
+  <input id="sectorFilter" class="sector-filter" placeholder="Find a sector (IT, Auto, Pharma…)" aria-label="Filter Indian sectors" oninput="filterSectorRows()"/><div class="ss" style="margin-bottom:8px">12 monitored Indian benchmarks · sector and thematic indices may share stocks. Tap a name, then a constituent to watch on Home.</div><div id="sectorList"></div>
+  <div class="ss" style="margin-top:8px" id="sectorStamp">Source timestamp will appear here.</div><div class="ss" style="margin-top:5px">These are 12 NSE sector and thematic benchmarks, not 12 non-overlapping groups of companies. A stock may belong to more than one index. Infrastructure and Energy are thematic indices; Banking, PSU Bank and Financial Services may share stocks.</div>
  </div>
 </section>
 
@@ -472,7 +578,7 @@ main{padding:12px}
   <h3>MoneyMantra 9 Finance AI</h3>
   <div class="ss" id="aiStatus" style="margin-bottom:9px">Concise Finance AI: answers in up to 3 simple sentences. Current market questions use the latest proxy data; web search is used only when fresh external information is needed.</div>
   <div style="display:flex;gap:7px;justify-content:flex-end;margin:-2px 0 8px"><button class="btn soft" onclick="startNewFinanceChat()">New chat / Clear</button></div>
-  <div id="chat" class="chat"><div class="msg bot">Ask me about markets, mutual funds, SIPs, insurance, personal finance, risk, asset allocation, financial concepts or the current market. For current-market questions I use the latest Worker market context; for general finance I answer educationally.</div></div>
+  <div id="chat" class="chat"><div class="msg bot">Ask me about markets, mutual funds, SIPs, insurance, personal finance, risk, asset allocation, financial concepts or the current market. I can explain the latest available market values and general finance topics.</div></div>
   <div class="chatrow"><input id="q" placeholder="Ask any finance question..." onkeydown="if(event.key==='Enter')askAI()"/><button id="askBtn" class="btn primary" onclick="askAI()">Ask</button></div>
  </div>
  <div class="card"><h3>Quick Questions</h3><div style="display:flex;flex-wrap:wrap;gap:7px">
@@ -490,6 +596,7 @@ main{padding:12px}
   <div class="alert amber"><b>Lump-Sum Investor</b><br/><span id="lumpInsight">Refresh market data to generate a context-aware lump-sum perspective.</span></div>
   <div class="alert red"><b>Retirement / Withdrawal</b><br/><span id="retireInsight">Refresh market data to generate a context-aware retirement perspective.</span></div>
  </div>
+ <div class="card"><div class="position-peek"><div><h3 style="margin:0">Positional Trading Context</h3><div class="position-kicker">Compare FII, DII, PRO and Retail with the market trend</div></div><button class="btn soft" onclick="openPositioningDetail()">Open ›</button></div></div>
  <div class="card">
    <h3>Market Report Generator</h3>
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px">
@@ -514,11 +621,11 @@ main{padding:12px}
  <div class="card">
   <h3>Data Source Centre</h3>
      <div class="signal clickable" onclick="openGoldDetail()"><div><div class="st">Gold Watch · published India bullion rate</div><div class="ss">All India Bullion daily India-wide reference · source date shown</div></div><span class="badge">GOLD</span></div>
-  <div class="signal"><div><div class="st">Cloudflare Data Proxy</div><div class="ss" id="proxyStatus">Configure config.js with your workers.dev URL</div></div><span class="badge">PROXY</span></div>
+  <div class="signal"><div><div class="st">Market data connection</div><div class="ss" id="proxyStatus">Connection status and available sources</div></div><span class="badge">DATA</span></div>
   <a class="source-link" href="https://www.nseindia.com/" target="_blank"><div class="signal"><div><div class="st">NSE India</div><div class="ss">Official Indian exchange reference</div></div><span class="badge">OFFICIAL</span></div></a>
   <a class="source-link" href="https://www.nseix.com/" target="_blank"><div class="signal"><div><div class="st">NSE IX</div><div class="ss">Official GIFT Nifty reference</div></div><span class="badge">OFFICIAL</span></div></a>
-  <a class="source-link" href="https://finance.yahoo.com/" target="_blank"><div class="signal"><div><div class="st">Public Quote Adapter</div><div class="ss">Browser refresh for index/time-series where available</div></div><span class="badge">WEB</span></div></a>
-  <div class="alert amber"><b>Live-data note</b><br/>When the app is opened as a local Android file, network requests can still be blocked even though the 15-second timer is running. HTTPS hosting improves browser/PWA behavior, but PWA status alone does not provide live data. The timer now waits a full 15 seconds after each completed refresh before starting the next automatic refresh. A reliable production setup should use HTTPS plus a same-origin proxy/backend or licensed market-data feed.</div>
+  <a class="source-link" href="https://finance.yahoo.com/" target="_blank"><div class="signal"><div><div class="st">Market quote sources</div><div class="ss">Available market prices and charts</div></div><span class="badge">WEB</span></div></a>
+  <div class="alert amber"><b>Live-data note</b><br/>This app checks available prices approximately every 15 seconds while open. A new source quote may arrive later, and prices can be delayed. Check the quote timestamp before making decisions.</div>
  </div>
 
  <div class="card mm9-compliance-card"><h3>Product, Pricing & Support</h3><div class="ss" style="margin-bottom:9px">The ₹199 one-time payment option is being prepared and is not enabled yet.</div><a href="policies.html"><strong>All website information &amp; policies</strong></a><a href="about.html">About MoneyMantra 9 Market Intelligence</a><a href="pricing.html">One-time pricing & access</a><a href="terms.html">Terms & Conditions</a><a href="privacy.html">Privacy Policy</a><a href="refunds.html">Refund & Cancellation Policy</a><a href="delivery.html">Digital Delivery Policy</a><a href="contact.html">Contact & Support</a><a href="disclaimer.html">Financial Disclaimer</a></div>
@@ -728,9 +835,16 @@ function scoreModel(){
    const p=marketData[k]?.pct;
    if(Number.isFinite(p)) comps.push({signal:clamp(p/1.5,-1,1),w});
  });
- if(marketData.sectors?.length){
-   const pos=marketData.sectors.filter(x=>x[2]>0).length, neg=marketData.sectors.filter(x=>x[2]<0).length;
-   comps.push({signal:(pos-neg)/marketData.sectors.length,w:.15});
+ // Keep all 12 benchmarks visible, but use a narrower non-thematic basket
+ // for the Sector component of Market Pulse. Otherwise Infrastructure/Energy
+ // and Banking/Financial Services/PSU Bank repeat some constituent exposure.
+ const sentimentCore=['IT','Auto','Pharma','FMCG','Metal','Realty','Media','Banking'];
+ const coreSet=new Set(sentimentCore);
+ const coreQuotes=(marketData.sectors||[]).filter(row=>coreSet.has(row[0])&&row[2]!=null&&Number.isFinite(Number(row[2])));
+ if(coreQuotes.length){
+   const pos=coreQuotes.filter(x=>Number(x[2])>0).length;
+   const neg=coreQuotes.filter(x=>Number(x[2])<0).length;
+   comps.push({signal:(pos-neg)/coreQuotes.length,w:.15});
  }
  const wsum=comps.reduce((a,c)=>a+c.w,0)||1;
  const raw=comps.reduce((a,c)=>a+c.signal*c.w,0)/wsum;
@@ -892,7 +1006,7 @@ function render(){
    const globals=marketData.global?Object.values(marketData.global).filter(x=>Number.isFinite(x?.price)).length:0;
    note.textContent=prices||available||globals
      ? `Data check: ${prices} Indian index quotes, ${available} sector quotes, ${globals} global quotes available. Missing fields mean the upstream source did not provide a verified value.`
-     : 'Live quotes are not connected. Your sector directory and its educational drill-downs remain available. Use the GitHub Pages HTTPS app and check Cloudflare /api/market for quote connectivity.';
+     : 'Live quotes are not connected. Your sector directory and its educational drill-downs remain available. Use the GitHub Pages HTTPS app and check your internet connection.';
    note.style.display=prices&&available&&globals?'none':'block';
  }
 
@@ -944,6 +1058,9 @@ function filterSectorRows(){
 }
 
 const BREADTH_STORAGE_KEY='mm9_verified_breadth_r4';
+let nifty50CompanyRows=null, nifty50CompanyAt=0, nifty50CompanySource='', nifty50CompanyTime='';
+let breadthView='adv', breadthShortlist=new Set(), breadthWatchlist=[];
+const BREADTH_WATCH_STORAGE='mm9_nifty50_selected_watch_v1';
 async function loadBreadthBatches(){
   const parts=await Promise.all([0,1].map(async part=>{
     const c=new AbortController(),tm=setTimeout(()=>c.abort(),24000);
@@ -956,12 +1073,13 @@ async function loadBreadthBatches(){
   const unique=new Set(rows.map(x=>x.symbol));
   if(rows.length!==50||unique.size!==50||rows.some(x=>!Number.isFinite(x.pct)))throw Error(`${unique.size} of 50 valid constituent quotes (need all 50)`);
   return {ok:true,adv:rows.filter(x=>x.pct>0).length,dec:rows.filter(x=>x.pct<0).length,unchanged:rows.filter(x=>x.pct===0).length,
-    asOf:parts[0].snapshotDate+' · last source quote',coverage:50,source:'Calculated from 50 exchange-listed constituent quotes · Yahoo public delayed charts',method:'calculated-stock-breadth'};
+    asOf:parts[0].snapshotDate+' · last source quote',coverage:50,source:'Calculated from 50 exchange-listed constituent quotes · Yahoo public delayed charts',method:'calculated-stock-breadth',items:rows};
 }
 
 let lastBreadthFetchMs=0;
 async function refreshNiftyBreadth(force=false){
  if(!API_BASE||(!force&&Date.now()-lastBreadthFetchMs<30*60000))return;
+ if(!force&&nifty50CompanyRows&&Date.now()-nifty50CompanyAt<60000)return; // Retain a newer full-constituent snapshot.
  lastBreadthFetchMs=Date.now();
  const caption=document.getElementById('breadthStamp');
  if(caption)caption.textContent='Checking official NSE constituent breadth…';
@@ -976,6 +1094,7 @@ async function refreshNiftyBreadth(force=false){
   try{result=await loadBreadthBatches()}catch(e){errs.push(String(e?.message||e))}
  }
  if(result){
+   if(Array.isArray(result.items)&&result.items.length===50)storeNifty50Rows(result.items,result.source,result.asOf);
    marketData.breadth={adv:result.adv,dec:result.dec,unchanged:result.unchanged,source:result.source||'Verified index breadth',time:result.asOf||'Timestamp not supplied',coverage:result.coverage||50,method:result.method||'official'};
    try{localStorage.setItem(BREADTH_STORAGE_KEY,JSON.stringify({...marketData.breadth,savedAt:Date.now()}))}catch(_){}
  }else{
@@ -989,8 +1108,152 @@ async function refreshNiftyBreadth(force=false){
  const adv=document.getElementById('advVal'),dec=document.getElementById('decVal');
  if(adv)adv.textContent=marketData.breadth?.adv??'—';if(dec)dec.textContent=marketData.breadth?.dec??'—';
  if(caption)caption.textContent=marketData.breadth?`${marketData.breadth.cached?'Last saved · ':''}${marketData.breadth.source} · ${marketData.breadth.time} · 50/50`:
-    `Source unavailable: ${errs.join(' / ').slice(0,165)}. No estimated breadth displayed.`;
+    'Constituent data is temporarily unavailable.';
 }
+
+function storeNifty50Rows(rows, source, asOf){
+ const clean=(rows||[]).map(x=>({symbol:String(x.symbol||'').trim().toUpperCase(),name:String(x.name||'').trim(),pct:Number(x.pct),price:x.price==null?null:Number(x.price),change:x.change==null?null:Number(x.change),quoteDate:String(x.quoteDate||'')}));
+ if(clean.length!==50 || new Set(clean.map(x=>x.symbol)).size!==50 || clean.some(x=>!/^[A-Z0-9&-]{1,22}$/.test(x.symbol)||!Number.isFinite(x.pct)))return false;
+ const sameDate=quoteTradingDate(asOf)&&quoteTradingDate(asOf)===quoteTradingDate(nifty50CompanyTime);
+ const previous=sameDate&&nifty50CompanyRows?new Map(nifty50CompanyRows.map(x=>[x.symbol,x])):new Map();
+ clean.forEach(x=>{const old=previous.get(x.symbol);if(!old)return;
+   if(!x.name&&old.name)x.name=old.name;
+   if(x.price===null&&Number.isFinite(old.price))x.price=old.price;
+   if(x.change===null&&Number.isFinite(old.change))x.change=old.change;
+ });
+ // Keep official company names and percentage changes when a price-only source refreshes later.
+ if(sameDate&&nifty50CompanyRows&&nifty50CompanySource.includes('NSE official')&&!String(source||'').includes('NSE official')){
+   const px=new Map(clean.map(x=>[x.symbol,x]));nifty50CompanyRows.forEach(x=>{const other=px.get(x.symbol);if(!other)return;
+      if(x.price===null&&Number.isFinite(other.price))x.price=other.price;
+      if(x.change===null&&Number.isFinite(other.change))x.change=other.change;
+   });nifty50CompanyAt=Date.now();return true;
+ }
+ nifty50CompanyRows=clean;nifty50CompanySource=String(source||'Public market quote');nifty50CompanyTime=String(asOf||'Quote time unavailable');nifty50CompanyAt=Date.now();
+ return true;
+}
+function breadthFilteredRows(){
+ let rows=(nifty50CompanyRows||[]).filter(x=>breadthView==='all'||(breadthView==='adv'?x.pct>0:breadthView==='dec'?x.pct<0:x.pct===0));
+ const q=(document.getElementById('breadthSearch')?.value||'').trim().toLowerCase();if(q)rows=rows.filter(x=>x.symbol.toLowerCase().includes(q)||x.name.toLowerCase().includes(q));
+ const sort=document.getElementById('breadthOrder')?.value||'top';
+ return rows.sort((a,b)=>sort==='low'?a.pct-b.pct:sort==='name'?(a.name||a.symbol).localeCompare(b.name||b.symbol):sort==='price'?(b.price??-1)-(a.price??-1):b.pct-a.pct);
+}
+function breadthCount(type){if(!nifty50CompanyRows)return null;return nifty50CompanyRows.filter(x=>type==='adv'?x.pct>0:type==='dec'?x.pct<0:type==='flat'?x.pct===0:true).length}
+function setBreadthMode(mode){if(!['adv','dec','flat','all'].includes(mode))return;breadthView=mode;renderBreadthExplorer()}
+function openBreadthExplorer(mode='adv'){
+ breadthView=mode;const layer=document.getElementById('breadthLayer');layer.hidden=false;layer.style.display='flex';document.body.style.overflow='hidden';
+ document.getElementById('breadthSearch').value='';document.getElementById('breadthOrder').value=mode==='dec'?'low':'top';
+ renderBreadthExplorer();
+ if(!nifty50CompanyRows||!nifty50CompanySource.includes('NSE official')||Date.now()-nifty50CompanyAt>60000)loadNifty50Companies();
+}
+function closeBreadthExplorer(){const layer=document.getElementById('breadthLayer');layer.style.display='none';layer.hidden=true;document.body.style.overflow=''}
+function renderBreadthExplorer(){
+ const box=document.getElementById('breadthResults');if(!box)return;
+ const source=document.getElementById('breadthExplorerSource');
+ document.querySelectorAll('#breadthModes [data-bmode]').forEach(btn=>{
+  const n=breadthCount(btn.dataset.bmode);btn.classList.toggle('active',btn.dataset.bmode===breadthView);
+  btn.textContent=({adv:'Advances',dec:'Declines',all:'All',flat:'Unchanged'})[btn.dataset.bmode]+(n===null?'':` · ${n}`)
+ });
+ document.getElementById('breadthSelectionCount').textContent=`${breadthShortlist.size} selected`;
+ document.getElementById('watchBreadthSelected').disabled=breadthShortlist.size===0;
+ box.replaceChildren();
+ if(!nifty50CompanyRows){source.textContent='Source check pending. Counts may be available even when the individual stock list is not.';box.textContent='Loading the current Nifty 50 constituent snapshot…';return;}
+ source.textContent=`${nifty50CompanyTime} · ${nifty50CompanySource}${Date.now()-nifty50CompanyAt>15*60000?' · last saved snapshot':''} · 50/50 companies`;
+ const rows=breadthFilteredRows();if(!rows.length){box.textContent='No companies match this filter.';return;}
+ const fragment=document.createDocumentFragment();
+ rows.forEach(x=>{
+  const row=document.createElement('div');row.className='breadth-row';
+  const tick=document.createElement('input');tick.type='checkbox';tick.checked=breadthShortlist.has(x.symbol);tick.setAttribute('aria-label',`Select ${x.name||x.symbol}`);
+  tick.addEventListener('change',()=>{if(tick.checked)breadthShortlist.add(x.symbol);else breadthShortlist.delete(x.symbol);document.getElementById('breadthSelectionCount').textContent=`${breadthShortlist.size} selected`;document.getElementById('watchBreadthSelected').disabled=breadthShortlist.size===0});
+  const button=document.createElement('button');button.className='breadth-stock-link';button.type='button';button.title='Open Home and watch '+(x.name||x.symbol);
+  const ticker=document.createElement('b');ticker.textContent=x.symbol;const name=document.createElement('small');name.textContent=(x.name||'NSE-listed stock')+' · Tap to watch';button.append(ticker,name);button.addEventListener('click',()=>watchBreadthCompany(x.symbol));
+  const metric=document.createElement('div');metric.className='breadth-figures';const pct=document.createElement('strong');pct.className=x.pct>0?'up':x.pct<0?'down':'flat';pct.textContent=fmtPct(x.pct);
+  const price=document.createElement('small');price.className='stock-price';price.textContent=x.price!==null&&Number.isFinite(x.price)&&x.price>0?'₹'+fmtNum(x.price):'—';metric.append(pct,price);
+  row.append(tick,button,metric);fragment.appendChild(row)
+ });box.appendChild(fragment);
+ const foot=document.createElement('div');foot.className='ss';foot.style.padding='10px 3px';foot.textContent='Sorted by daily change vs the previous close. Biggest gainer does not automatically mean the best investment. Verify quote timestamps before acting.';box.appendChild(foot);
+}
+function quoteTradingDate(value){
+ const s=String(value||'');
+ const iso=s.match(/\b(\d{4}-\d{2}-\d{2})\b/);if(iso)return iso[1];
+ const dmy=s.match(/\b(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{4})\b/);
+ if(!dmy)return null;
+ const months={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+ const mo=months[dmy[2].toLowerCase()];return mo?`${dmy[3]}-${mo}-${dmy[1].padStart(2,'0')}`:null;
+}
+let supplementPricesRunning=false;
+async function supplementNiftyPrices(){
+ if(supplementPricesRunning||!nifty50CompanyRows||!nifty50CompanyRows.some(x=>x.price==null))return;
+ supplementPricesRunning=true;
+ try{
+  const snapshotDate=quoteTradingDate(nifty50CompanyTime);
+  const batch=await loadBreadthBatches();
+  const batchDate=quoteTradingDate(batch.asOf);
+  // If the original index quote is undated, do not combine values.
+  if(!snapshotDate||snapshotDate!==batchDate)return;
+  const prices=new Map(batch.items.map(x=>[x.symbol,x]));
+  nifty50CompanyRows.forEach(row=>{
+    const hit=prices.get(row.symbol);if(!hit)return;
+    if(row.price===null&&Number.isFinite(hit.price)&&hit.price>0)row.price=hit.price;
+    if(row.change===null&&Number.isFinite(hit.change))row.change=hit.change;
+  });
+  if(document.getElementById('breadthLayer')?.style.display!=='none')renderBreadthExplorer();
+ }catch(_){/* original percentage rankings remain available */}
+ finally{supplementPricesRunning=false}
+}
+async function loadNifty50Companies(){
+ if(!API_BASE){document.getElementById('breadthResults').textContent='Connect the market data service to load company-level breadth.';return;}
+ const source=document.getElementById('breadthExplorerSource');source.textContent='Checking NSE 50-stock list…';
+ try{
+  const c=new AbortController(),timer=setTimeout(()=>c.abort(),12000);let r;
+  try{r=await fetch(`${API_BASE}/api/nifty50-stocks`,{cache:'no-store',signal:c.signal})}finally{clearTimeout(timer)}
+  const j=await r.json();if(!r.ok||!j.ok||!storeNifty50Rows(j.items,j.source,j.asOf))throw Error(j.error||'Market snapshot incomplete');
+  // Some exchange snapshots contain percentage moves but omit lastPrice.
+  // Try dated stock quotes separately; never merge mismatched trading sessions.
+  if(nifty50CompanyRows.some(x=>x.price===null))supplementNiftyPrices();
+ }catch(e){
+  source.textContent='Checking last available market prices…';
+  try{const d=await loadBreadthBatches();if(!storeNifty50Rows(d.items,d.source,d.asOf))throw Error('Unable to validate 50 constituents')}
+  catch(err){
+   if(!nifty50CompanyRows){document.getElementById('breadthResults').textContent='Company-level breadth unavailable right now. Please try again later. Prices and rankings are not estimated.';source.textContent='Market prices are temporarily unavailable';return}
+   source.textContent='Source check unavailable · showing last verified list';
+  }
+ }
+ if(nifty50CompanyRows){const adv=breadthCount('adv'),dec=breadthCount('dec'),unchanged=breadthCount('flat');
+ marketData.breadth={adv,dec,unchanged,source:nifty50CompanySource,time:nifty50CompanyTime,coverage:50,method:'constituent-list'};
+ document.getElementById('advVal').textContent=adv;document.getElementById('decVal').textContent=dec;
+ document.getElementById('breadthStamp').textContent=`${nifty50CompanySource} · ${nifty50CompanyTime} · 50/50`;
+ }
+ if(document.getElementById('breadthLayer').style.display!=='none')renderBreadthExplorer();
+}
+function toggleBreadthWatchNav(){
+ const nav=document.getElementById('breadthWatchNav');if(!nav)return;nav.style.display=breadthWatchlist.length?'flex':'none';
+ if(breadthWatchlist.length){const pos=Math.max(0,breadthWatchlist.indexOf(selectedPulseSymbol.replace(/\.NS$/,'')));
+ document.getElementById('breadthWatchProgress').textContent=`Nifty 50 shortlist · ${pos+1}/${breadthWatchlist.length}`;}
+}
+function watchBreadthCompany(symbol){
+ if(!/^[A-Z0-9&-]{1,22}$/.test(symbol))return;
+ closeBreadthExplorer();watchSectorConstituent(symbol,nifty50CompanyRows?.find(x=>x.symbol===symbol)?.name||symbol);
+ toggleBreadthWatchNav();
+}
+function selectTopBreadthStocks(n){breadthFilteredRows().slice(0,n).forEach(x=>breadthShortlist.add(x.symbol));renderBreadthExplorer()}
+function clearBreadthSelection(){breadthShortlist.clear();renderBreadthExplorer()}
+function watchBreadthSelected(){
+ const visible=breadthFilteredRows().filter(x=>breadthShortlist.has(x.symbol));
+ const remaining=(nifty50CompanyRows||[]).filter(x=>breadthShortlist.has(x.symbol)&&!visible.some(y=>y.symbol===x.symbol)).sort((a,b)=>b.pct-a.pct);
+ const symbols=[...visible,...remaining].map(x=>x.symbol);
+ if(!symbols.length)return;breadthWatchlist=symbols;try{localStorage.setItem(BREADTH_WATCH_STORAGE,JSON.stringify(symbols))}catch(_){}
+ watchBreadthCompany(symbols[0]);toggleBreadthWatchNav();
+}
+function stepBreadthWatch(delta){
+ if(!breadthWatchlist.length)return;
+ const current=selectedPulseSymbol.replace(/\.NS$/,'');const ix=breadthWatchlist.indexOf(current);
+ const next=(Math.max(ix,0)+delta+breadthWatchlist.length)%breadthWatchlist.length;
+ setWatchSymbol(breadthWatchlist[next]+'.NS');toggleBreadthWatchNav();
+}
+function clearBreadthWatch(){breadthWatchlist=[];try{localStorage.removeItem(BREADTH_WATCH_STORAGE)}catch(_){}toggleBreadthWatchNav()}
+try{const saved=JSON.parse(localStorage.getItem(BREADTH_WATCH_STORAGE)||'[]');if(Array.isArray(saved))breadthWatchlist=saved.filter(x=>/^[A-Z0-9&-]{1,22}$/.test(x)).slice(0,50)}catch(_){}
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('breadthLayer')?.style.display!=='none')closeBreadthExplorer()});
+
 const GIFT_STORAGE_KEY='mm9_verified_gift_r4';
 let lastGiftFetchAt=0, giftFetchInFlight=false, giftFetchError='';
 function restoreGiftSnapshot(){
@@ -1035,6 +1298,11 @@ function renderSectors(){
    row.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSectorDetail(name)}};
    const title=document.createElement('div');
    const bold=document.createElement('b');bold.textContent=name;title.appendChild(bold);
+   if(name==='Infrastructure'||name==='Energy'){
+     const tag=document.createElement('span');tag.className='sector-theme-tag';tag.textContent='Thematic';tag.title='Theme with companies that also belong to other sectors';title.appendChild(tag);
+   }else if(name==='Financial Services'||name==='PSU Bank'||name==='Banking'){
+     const tag=document.createElement('span');tag.className='sector-overlap-tag';tag.textContent='Shared stocks';tag.title='Companies may appear in other financial indices';title.appendChild(tag);
+   }
    if(!available){const note=document.createElement('div');note.className='sector-quote-note';note.textContent='Tap for sector scope and investor guidance';title.appendChild(note)}
    const change=document.createElement('span');change.textContent=available?fmtPct(priceChange):'—';change.className=available?cls(Number(priceChange)):'sector-unavailable';
    const dot=document.createElement('span');dot.textContent=available?icon(Number(priceChange)):'◌';dot.className=available?'':'sector-unavailable';
@@ -1060,7 +1328,7 @@ function selectedIntradayChart(){
  const stock=selectedPulseSymbol!=='^NSEI';
  const pack=(pulseDataBySymbol[selectedPulseSymbol]||latestPulsePack);
  if(stock){
-  if(pack?.symbol!==selectedPulseSymbol)return {name:activeSymbolName(),rows:[],source:'Stock data is being requested from the Cloudflare Worker.',date:null};
+  if(pack?.symbol!==selectedPulseSymbol)return {name:activeSymbolName(),rows:[],source:'Stock market information is being retrieved.',date:null};
   const intraday=pack.intraday;
   return {name:activeSymbolName(),rows:Array.isArray(intraday?.points)?intraday.points:[],source:intraday?.source||'Intraday price data unavailable. Historical close chart remains below.',date:intraday?.sessionDate||null};
  }
@@ -1198,7 +1466,7 @@ async function fetchProxyMarket(force=false){
    }else errors[group]=String(result.reason?.message||result.reason);
  }
  if(!Object.keys(quotes).length)throw Error('Market quote sources unavailable; last saved readings retained.');
- return {ok:true,quotes,errors,groups,source:'Cloudflare grouped market feeds',generatedAt:new Date().toISOString(),sectors:[]};
+ return {ok:true,quotes,errors,groups,source:'Available market quote feeds',generatedAt:new Date().toISOString(),sectors:[]};
 }
 async function refreshSectorSnapshot(force=false){
  if(!API_BASE || sectorSnapshotRequest || (!force&&Date.now()-lastSectorSnapshotAt<90000))return;
@@ -1219,7 +1487,7 @@ async function refreshSectorSnapshot(force=false){
    // Banking uses the existing Bank Nifty quote.
    const bank=marketData.bank;
    if(Number.isFinite(Number(bank?.price))&&Number.isFinite(Number(bank?.pct)))merged.set('Banking',['Banking',Number(bank.price),Number(bank.pct)]);
-   if(merged.size){marketData.sectors=[...merged.values()];marketData.sectorSource='Split, timestamped sector quotes via Cloudflare';render()}
+   if(merged.size){marketData.sectors=[...merged.values()];marketData.sectorSource='Latest available sector quotes';render()}
  })().catch(e=>console.warn('Sector detail update unavailable',e)).finally(()=>sectorSnapshotRequest=null);
  return sectorSnapshotRequest;
 }
@@ -1311,7 +1579,7 @@ async function refreshAll(manual=false){
  refreshInFlight=true;
  const btn=document.getElementById('refreshBtn');
  btn.disabled=true;btn.classList.add('loading');
- document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing via Cloudflare Worker':'Refreshing public sources');
+ document.getElementById('sourceMode').textContent=manual?'Manual refresh started':(API_BASE?'Refreshing from available market sources':'Refreshing public sources');
  let liveCount=0, routeNames=new Set(), hadAnyError=false, proxyError="";
  try{
    let proxyPack=null;
@@ -1321,15 +1589,15 @@ async function refreshAll(manual=false){
    let results=[], got={};
    if(proxyPack){
      Object.entries(proxyPack.quotes).forEach(([k,q])=>{
-       got[k]={__proxyNormalized:q,__route:'Cloudflare Worker'};
+       got[k]={__proxyNormalized:q,__route:'Market data source'};
        liveCount++;
-       routeNames.add('Cloudflare Worker');
+       routeNames.add('Market data source');
      });
      if(Array.isArray(proxyPack.sectors)&&proxyPack.sectors.length){
        marketData.sectors=proxyPack.sectors
          .filter(s=>Number.isFinite(Number(s.price))&&Number.isFinite(Number(s.pct)))
          .map(s=>[s.name,Number(s.price),Number(s.pct)]);
-       marketData.sectorSource='Cloudflare Worker';
+       marketData.sectorSource='Market data source';
      }
    }else if(!API_BASE){
      results=await Promise.allSettled(Object.entries(symbols).map(async ([k,s])=>[k,await yahooChart(s)]));
@@ -1346,7 +1614,7 @@ async function refreshAll(manual=false){
    ['nifty','bank','sensex','vix'].forEach(k=>{
      if(got[k]){
        const q=got[k].__proxyNormalized?normalizedFromProxy(got[k].__proxyNormalized):quoteFromChart(got[k]);
-       marketData[k]={price:q.price,pct:q.pct,source:got[k].__proxyNormalized?'Cloudflare Worker':'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
+       marketData[k]={price:q.price,pct:q.pct,source:got[k].__proxyNormalized?'Market data source':'Public web quote',prev:q.prev,open:q.open,high:q.high,low:q.low};
        if(q.epoch){
          latestIndianEpoch=Math.max(latestIndianEpoch||0,Number(q.epoch));
          marketData.asOfEpoch=Number(q.epoch)*1000;
@@ -1368,7 +1636,7 @@ async function refreshAll(manual=false){
      const timePart=new Intl.DateTimeFormat('en-GB',{timeZone:IST,hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
      marketData.timestamp=`${datePart} · ${timePart} IST`;
      marketData.asOfEpoch=latestIndianEpoch*1000;
-     marketData.mode=proxyPack?'Cloudflare Worker market data':'Public web market data';
+     marketData.mode=proxyPack?'Market data source':'Public web market data';
    }
    if(got.nasdaq){
      const q=got.nasdaq.__proxyNormalized?normalizedFromProxy(got.nasdaq.__proxyNormalized):quoteFromChart(got.nasdaq); marketData.global=marketData.global||{}; marketData.global.nasdaq=q;
@@ -1386,7 +1654,7 @@ async function refreshAll(manual=false){
      const q=got.sgx.__proxyNormalized?normalizedFromProxy(got.sgx.__proxyNormalized):quoteFromChart(got.sgx);
      marketData.global=marketData.global||{};
      marketData.global.sgx=q;
-     marketData.sgxSource='Cloudflare Worker · Yahoo Finance STI';
+     marketData.sgxSource='Singapore market quote';
    }
    if(got.nikkei){
      const q=got.nikkei.__proxyNormalized?normalizedFromProxy(got.nikkei.__proxyNormalized):quoteFromChart(got.nikkei); marketData.global=marketData.global||{}; marketData.global.nikkei=q;
@@ -1403,25 +1671,25 @@ async function refreshAll(manual=false){
    if(liveCount>=3){
       lastSuccessfulMode='live';
       // Preserve actual exchange quote timestamps; only 'Checked' uses current time.
-      marketData.mode=proxyPack?'Cloudflare Worker market data':'Public web market data';
+      marketData.mode=proxyPack?'Market data source':'Public web market data';
       const routes=[...routeNames].join(' + ');
       document.getElementById('sourceMode').textContent=proxyPack
-        ? `${liveCount} source quotes checked via Cloudflare Worker · see quote timestamps`
+        ? `${liveCount} source quotes checked from available market sources · see quote timestamps`
         : `${liveCount} sources refreshed${routes?' · '+routes:''}`;
    }else if(liveCount>0){
       lastSuccessfulMode='live';
       // Keep the actual per-quote observation timestamp rather than the check time.
-      marketData.mode=proxyPack?'Cloudflare Worker (partial)':'Public source (partial)';
+      marketData.mode=proxyPack?'Market data source (partial)':'Public source (partial)';
       document.getElementById('sourceMode').textContent=proxyPack
         ? `Partial quote check: ${liveCount} source${liveCount===1?'':'s'}`
         : `Partial refresh: ${liveCount} source${liveCount===1?'':'s'}`;
    }else{
       lastSuccessfulMode='fallback';
-      document.getElementById('sourceMode').textContent=API_BASE?'Cloudflare feed unavailable · '+(proxyError||'no verified response'):'Public source unavailable';
+      document.getElementById('sourceMode').textContent=API_BASE?'Market prices are temporarily unavailable':'Public source unavailable';
    }
  }catch(e){
    lastSuccessfulMode='fallback';
-   document.getElementById('sourceMode').textContent=API_BASE?'Cloudflare feed unavailable · '+(proxyError||'no verified response'):'Public source unavailable';
+   document.getElementById('sourceMode').textContent=API_BASE?'Market prices are temporarily unavailable':'Public source unavailable';
  }finally{
    saveCurrentPoint();
    if(liveCount>0 && Number.isFinite(marketData.nifty?.pct)) saveIndianSnapshot();
@@ -1486,7 +1754,7 @@ const SECTOR_META = {
     drivers:'Interest rates, liquidity, credit growth, asset quality, market activity and regulatory changes.'
   },
   'Infrastructure': {
-    scope:'Indian companies linked to infrastructure and capital-expenditure activity.',
+    scope:'Thematic Nifty Infrastructure index spanning telecom, power, ports, construction, transportation, oil and other infrastructure-related industries.',
     drivers:'Government/private capex, project awards, order books, financing costs and execution progress.'
   },
   'Media': {
@@ -1575,9 +1843,9 @@ async function fetchSectorMembers(name, token, payload){
      const hint=document.createElement('div');hint.className='ss';hint.style.marginTop='7px';
      hint.textContent='Tap any company to open Home → Choose what to watch, with that NSE ticker selected.';
      area.appendChild(hint);
-   }else area.textContent=`Constituent file is not accessible from Cloudflare (${j.error||'source unavailable'}). Open the official index page below for its current Index Constituent download.`;
+   }else area.textContent=`Constituent list could not be loaded (${j.error||'source unavailable'}). Open the official index page below for its current Index Constituent download.`;
    if(j.sourceUrl){const a=document.createElement('a');a.href=j.sourceUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Open official NSE constituent file ↗';area.appendChild(document.createElement('br'));area.appendChild(a)}
- }catch(e){if(activeDetailKind==='sector'&&activeDetailToken===token){const a=document.getElementById('sectorMembers');if(a)a.textContent='Could not reach the constituent endpoint. Use the official NSE index link below.'}}
+ }catch(e){if(activeDetailKind==='sector'&&activeDetailToken===token){const a=document.getElementById('sectorMembers');if(a)a.textContent='Company list is temporarily unavailable. You can check the official NSE index page below.'}}
 }
 async function fetchSectorNarrative(name,token){
  try{
@@ -1593,11 +1861,202 @@ async function fetchSectorNarrative(name,token){
    labels.forEach(([key],i)=>{if(cards[i]&&typeof j.insight?.[key]==='string'&&j.insight[key].length<650)cards[i].textContent=j.insight[key]});
  }catch(_){/* The deterministic explanation stays visible. */}
 }
+
+function sectorDirectorySection(name){
+ const infra=name==='Infrastructure';
+ return `<div class="detailsection"><h4>${infra?'Infrastructure · 11 industry categories':'Industry groups & companies'}</h4>
+ <div class="sector-dir-note">${infra?'Explore the industries represented in Nifty Infrastructure. Open a category to view its listed companies when available.':'Explore companies in '+escText(name)+'.'} Tap a company to open its chart, Market Pulse and 20-day history on Home.</div>
+ <div id="sectorBreakdown" class="sector-directory">${infra?'<div class="sector-dir-note">Explore the categories below.</div>':'<div class="sector-dir-note">Getting the company list…</div>'}</div></div>`;
+}
+// NSE Infrastructure's 11 broad industry categories are stable navigation headings.
+// Companies are placed into a category only when published classifications confirm it.
+const INFRASTRUCTURE_INDUSTRIES=[
+ 'Oil, Gas & Consumable Fuels','Telecommunication','Construction','Power',
+ 'Construction Materials','Capital Goods','Services','Healthcare',
+ 'Automobile and Auto Components','Consumer Services','Realty'
+];
+function canonicalInfrastructureIndustry(label){
+ const key=String(label||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const aliases={
+  oilgasconsumablefuels:'Oil, Gas & Consumable Fuels',
+  oilgasandconsumablefuels:'Oil, Gas & Consumable Fuels',
+  telecommunication:'Telecommunication',telecommunications:'Telecommunication',
+  construction:'Construction',power:'Power',constructionmaterials:'Construction Materials',
+  capitalgoods:'Capital Goods',services:'Services',healthcare:'Healthcare',
+  automobileandautocomponents:'Automobile and Auto Components',
+  automobileautocomponents:'Automobile and Auto Components',
+  consumerservices:'Consumer Services',realty:'Realty'
+ };
+ return aliases[key]||null;
+}
+function infrastructureDirectoryView(raw){
+ const verified=raw?.ok===true;
+ const groups=INFRASTRUCTURE_INDUSTRIES.map(name=>({name,items:[]}));
+ const map=new Map(groups.map(g=>[g.name,g]));
+ const other=[];const seen=new Set();let assigned=0;
+ const provided=Array.isArray(raw?.groups)?raw.groups:Array.isArray(raw?.categories)?raw.categories:[];
+ provided.forEach(group=>{
+  const groupName=canonicalInfrastructureIndustry(group?.name);
+  (Array.isArray(group?.items)?group.items:[]).forEach(stock=>{
+   const symbol=String(stock?.symbol||'').trim().toUpperCase();
+   if(!/^[A-Z0-9&-]{1,25}$/.test(symbol)||seen.has(symbol))return;
+   seen.add(symbol);
+   const item={symbol,name:String(stock.name||symbol),basicIndustry:stock.basicIndustry||null};
+   if(groupName){map.get(groupName).items.push(item);assigned++;}
+   else other.push(item);
+  });
+ });
+ if(other.length)groups.push({name:'Other index companies',items:other});
+ return {ok:true,groups,total:seen.size,classifiedCount:assigned,
+  awaitingCompanies:!verified||seen.size===0,completeClassification:verified&&seen.size>0&&assigned===seen.size,
+  saved:raw?.saved===true,sourceLabel:raw?.sourceLabel||raw?.source||'',
+  officialLink:raw?.officialLink||'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure'};
+}
+let sectorBreakdownState=null;
+function renderSectorDirectory(token){
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ const container=document.getElementById('sectorBreakdown');
+ if(!container||!sectorBreakdownState||sectorBreakdownState.token!==token)return;
+ const {name,data:sourceData}=sectorBreakdownState;
+ const infra=name==='Infrastructure';
+ const data=infra?infrastructureDirectoryView(sourceData):sourceData;
+ container.replaceChildren();
+ const main=document.createElement('div');main.className='sector-dir-top';
+ const label=document.createElement('span');label.textContent=infra?
+   (data.total?`11 industries · ${data.total} published companies`:'11 industries · Company details will appear when available'):
+   (data.ok?`${data.total} companies · ${data.groups.length} ${data.groups.length===1?'industry group':'industry groups'}`:'Company information is temporarily unavailable');
+ const stamp=document.createElement('span');stamp.textContent=data.ok&&!data.awaitingCompanies?(data.sourceLabel||'NSE Indices')+(data.saved?' · Last available list':''):'';
+ main.append(label,stamp);container.appendChild(main);
+ if(data.ok&&Array.isArray(data.groups)&&data.groups.length){
+   const hasCompanies=data.groups.some(g=>g?.items?.length);
+   if(infra&&!hasCompanies){const info=document.createElement('div');info.className='sector-dir-note';info.textContent='Industry names are shown below. Company lists will be shown when the latest index membership is available.';container.appendChild(info)}
+   const input=document.createElement('input');input.type='search';input.className='sector-dir-search';input.placeholder='Find company or ticker';input.setAttribute('aria-label',`Search ${name} companies`);
+   if(hasCompanies)container.appendChild(input);
+   const groups=document.createElement('div');groups.className='sector-dir-groups';
+   let expanded=false;
+   data.groups.forEach(group=>{
+     if(!group?.items?.length&&!infra)return;
+     const details=document.createElement('details');details.open=!expanded;expanded=true;
+     const head=document.createElement('summary');
+     const groupName=document.createElement('span');groupName.textContent=group.name;
+     const count=document.createElement('small');count.textContent=group.items.length?
+       `${group.items.length} ${group.items.length===1?'stock':'stocks'}`:
+       (data.completeClassification?'No current constituents':'Details pending');
+     head.append(groupName,count);details.appendChild(head);
+     const makeWatchButton=stock=>{
+       const button=document.createElement('button');button.type='button';button.dataset.search=(stock.symbol+' '+(stock.name||'')+' '+(stock.basicIndustry||'')).toLowerCase();
+       const ticker=document.createElement('strong');ticker.textContent=stock.symbol;
+       const text=document.createElement('span');text.textContent=stock.name||'View stock';
+       button.append(ticker,text);button.setAttribute('aria-label',`Watch ${stock.name||stock.symbol} on Home`);
+       button.addEventListener('click',()=>watchSectorConstituent(stock.symbol,stock.name));return button;
+     };
+     const basic=new Map();
+     group.items.forEach(stock=>{
+       const k=stock.basicIndustry||'Other companies';if(!basic.has(k))basic.set(k,[]);basic.get(k).push(stock);
+     });
+     if(infra&&!group.items.length){
+       const note=document.createElement('div');note.className='sector-dir-note';note.style.padding='0 12px 12px';
+       note.textContent=data.completeClassification?'There are no current index companies assigned to this category.':'The current company list for this industry is not available yet.';
+       details.appendChild(note);
+     }else if(basic.size>1&&group.items.some(x=>x.basicIndustry)){
+       const subGroups=document.createElement('div');subGroups.className='sector-dir-groups';subGroups.style.padding='0 10px 12px';
+       [...basic].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([industry,items])=>{
+         const sub=document.createElement('details');sub.open=false;
+         const subHead=document.createElement('summary');
+         const n=document.createElement('span');n.textContent=industry;
+         const c=document.createElement('small');c.textContent=`${items.length} ${items.length===1?'stock':'stocks'}`;
+         subHead.append(n,c);sub.appendChild(subHead);
+         const memberBox=document.createElement('div');memberBox.className='sector-dir-items';items.forEach(x=>memberBox.appendChild(makeWatchButton(x)));
+         sub.appendChild(memberBox);subGroups.appendChild(sub);
+       });
+       details.appendChild(subGroups);
+     }else{
+       const members=document.createElement('div');members.className='sector-dir-items';group.items.forEach(x=>members.appendChild(makeWatchButton(x)));
+       details.appendChild(members);
+     }
+     groups.appendChild(details);
+   });
+   container.appendChild(groups);
+   if(hasCompanies)input.addEventListener('input',()=>{
+     const needle=input.value.trim().toLowerCase();
+     groups.querySelectorAll('details').forEach(detail=>{
+       let found=0;
+       detail.querySelectorAll('button[data-search]').forEach(btn=>{
+         const matches=btn.dataset.search.includes(needle);
+         btn.style.display=matches?'':'none';if(matches)found++;
+       });
+       if(detail.parentElement===groups){detail.style.display=found?'':'none';if(needle&&found)detail.open=true}
+       else if(needle&&found)detail.open=true;
+     });
+   });
+   const note=document.createElement('div');note.className='sector-dir-note';note.textContent=infra?
+     'These are industry categories within Nifty Infrastructure, not separate live indices. Stocks may also belong to other NSE indices.':
+     'A company can belong to more than one index. Each company appears only once within this view. Industry groups are not independently traded indices.';
+   container.appendChild(note);
+ }else{
+   const note=document.createElement('div');note.className='sector-dir-note';
+   note.textContent='The latest constituent list is not available. Check the NSE index page for its published company list.';
+   container.appendChild(note);
+ }
+ const links=document.createElement('div');links.className='sector-dir-links';
+ const ref=document.createElement('a');ref.href=data.officialLink||'https://www.niftyindices.com/';ref.target='_blank';ref.rel='noopener noreferrer';ref.textContent='View official index details ↗';links.appendChild(ref);
+ container.appendChild(links);
+}
+async function loadSectorDirectory(name,token){
+ const cacheKey='mm9_sector_members_'+name;
+ const officialLink=name==='Infrastructure'?
+   'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure':
+   'https://www.niftyindices.com/indices/equity/sectoral-indices';
+ let cached=null;
+ try{const saved=JSON.parse(localStorage.getItem(cacheKey)||'null');
+   if(saved?.data?.ok&&Array.isArray(saved.data.groups||saved.data.categories)&&Date.now()-saved.savedAt<45*86400000)
+     cached={...saved.data,saved:true};
+ }catch(_){}
+ // Show a saved valid snapshot immediately, or stable category headings if it has not been fetched yet.
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ sectorBreakdownState={name,token,data:cached||{ok:false,officialLink}};
+ renderSectorDirectory(token);
+ if(!API_BASE)return;
+ async function fetchDirectory(path){
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),11000);
+   try{const r=await fetch(`${API_BASE}${path}`,{signal:controller.signal,cache:'no-store'});
+     if(!r.ok)return null;
+     const data=await r.json();
+     if(data?.ok&&Array.isArray(data.groups||data.categories))return data;
+   }catch(_){}finally{clearTimeout(timer)}
+   return null;
+ }
+ let latest=null;
+ if(name==='Infrastructure'){
+   // Both data routes describe the same published index; prefer the one with more classified companies.
+   const [general,specific]=await Promise.all([
+     fetchDirectory('/api/sector-breakdown?name=Infrastructure'),
+     fetchDirectory('/api/infrastructure-breakdown')
+   ]);
+   const score=j=>j?infrastructureDirectoryView(j).classifiedCount:-1;
+   latest=score(specific)>score(general)?specific:(general||specific);
+ }else{
+   latest=await fetchDirectory('/api/sector-breakdown?name='+encodeURIComponent(name));
+ }
+ if(activeDetailKind!=='sector'||activeDetailToken!==token)return;
+ if(latest){
+   latest.officialLink=latest.officialLink||officialLink;
+   const validCount=name==='Infrastructure'?infrastructureDirectoryView(latest).total:
+     (Array.isArray(latest.groups)?latest.groups.reduce((sum,g)=>sum+(g?.items?.length||0),0):0);
+   if(validCount){
+     try{localStorage.setItem(cacheKey,JSON.stringify({data:latest,savedAt:Date.now()}))}catch(_){}
+   }
+   sectorBreakdownState={name,token,data:latest};
+ }else if(!cached){
+   sectorBreakdownState={name,token,data:{ok:false,officialLink}};
+ }
+ renderSectorDirectory(token);
+}
 async function openSectorDetail(name){
  const listItem=(marketData.sectors||[]).find(x=>x[0]===name);
  const fallbackSector={name,price:listItem?.[1],pct:listItem?.[2]};
  const fallback=sectorFallbackInsight(name,fallbackSector);
- showSheet(`${name} Sector`,'Indian sector intelligence',
+ showSheet(`${name} Sector`,'Indian market sector overview',
    `<div class="detailgrid">
       ${detailCell('Index level',fmtNum(fallbackSector.price),cls(fallbackSector.pct))}
       ${detailCell('Today',fmtPct(fallbackSector.pct),cls(fallbackSector.pct))}
@@ -1609,9 +2068,13 @@ async function openSectorDetail(name){
       <div class="insight-card"><h5>How to interpret</h5><p>${fallback.how}</p></div>
       <div class="insight-card"><h5>Next step</h5><p>${fallback.nextStep}</p></div>
     </div>
+    ${sectorDirectorySection(name)}
     <div class="detailsection"><h4>Index documentation</h4><div class="ss">Sector descriptions are available independently of live quote coverage.</div><div class="sector-source-list"><a class="sector-source-link" href="https://www.niftyindices.com/indices/equity/sectoral-indices" target="_blank" rel="noopener noreferrer">↗ Official NSE sectoral indices</a></div></div>`);
 
  activeDetailKind='sector';const sectorToken=activeDetailToken;
+ sectorBreakdownState={name,token:sectorToken,data:{ok:false,officialLink:name==='Infrastructure'?'https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure':'https://www.niftyindices.com/indices/equity/sectoral-indices'}};
+ renderSectorDirectory(sectorToken);
+ loadSectorDirectory(name,sectorToken);
  try{
    let payload=null;
    if(API_BASE){
@@ -1655,30 +2118,28 @@ async function openSectorDetail(name){
        <div class="insight-card"><h5>How to interpret</h5><p>${insight.how}</p></div>
        <div class="insight-card"><h5>Next step for investors</h5><p>${insight.nextStep}</p></div>
      </div>
-     <div class="detailsection">
-       <h4>Constituent stocks · Official NSE list</h4>
-       <div id="sectorMembers" class="sector-list-note">Checking official index constituent file…</div>
-     </div>
+     ${sectorDirectorySection(name)}
      <div class="detailsection">
        <h4>Public sources</h4>
-       <div style="font-size:9.5px;color:var(--muted);line-height:1.45">Use these links to verify index construction, constituents, factsheets or current public-market data. Public quotes can be delayed; a licensed feed can replace the data adapter later without changing this screen.</div>
+       <div style="font-size:9.5px;color:var(--muted);line-height:1.45">You can verify index details, companies and prices through the sources below. Quotes may be delayed. </div>
        <div class="sector-source-list">${sectorSourceLinks(payload,insight)}</div>
      </div>`;
    if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
    document.getElementById('detailBody').innerHTML=body;
+   renderSectorDirectory(sectorToken);
    const sectorSvg=document.querySelector('#detailBody .sector-chart-wrap svg');
    if(sectorSvg && Array.isArray(d.timeline)&&d.timeline.length>1){
      const vals=d.timeline.map(p=>Number(p.pct)).filter(Number.isFinite);
      const miniMax=Math.max(...vals,0.2),miniMin=Math.min(...vals,-0.2),miniRange=miniMax-miniMin||1;
      bindChartHover(sectorSvg,d.timeline,{width:390,x:(p,i)=>28+i/(d.timeline.length-1)*(390-28-8),y:p=>8+(miniMax-Number(p.pct))/miniRange*(125-8-18),label:p=>`${p.time||''} IST · ${p.price!=null?fmtNum(Number(p.price))+' points · ':''}${fmtPct(Number(p.pct))}`},'sectorChartReadout');
    }
-   fetchSectorMembers(name,sectorToken,payload);
+
    fetchSectorNarrative(name,sectorToken);
  }catch(e){
    if(activeDetailKind!=='sector'||sectorToken!==activeDetailToken)return;
    const current=document.getElementById('detailBody');
    current.insertAdjacentHTML('beforeend',
-     `<div class="alert amber"><b>Live sector detail unavailable.</b><br/>${e.message}. The basic sector scope and investor interpretation above remain available.</div>`);
+     `<div class="alert amber"><b>Some market details are not available right now.</b><br/>You can still explore the industry categories and check the published index information.</div>`);
  }
 }
 
@@ -1943,8 +2404,8 @@ function openDetail(type,arg){
  if(type==='sectors'){
    const pos=(marketData.sectors||[]).filter(x=>x[2]>0).length;
    const body=`<div class="detailgrid">${detailCell('Positive sectors',`${pos}/${marketData.sectors.length}`)}${detailCell('Universe','India · NSE')}</div>
-   <div class="detailsection"><h4>What this sector pulse means</h4><div style="font-size:10px;line-height:1.6">This is an Indian sector dashboard built from NSE sectoral indices such as IT, Auto, Pharma, FMCG, Metal, Realty, Financial Services, PSU Bank, Infrastructure and Media. It is not a global-sector dashboard, and it is not the list of companies inside the Sensex.</div></div>`;
-   return showSheet('Indian Sector Breadth','NSE sectoral indices',body);
+   <div class="detailsection"><h4>What this sector pulse means</h4><div style="font-size:10px;line-height:1.6">These 12 readings represent NSE sector and thematic indices, not unique industry-company groups. The Infrastructure and Energy indices overlap with others; Bank, PSU Bank and Financial Services also share constituents. Market Pulse uses a narrower eight-family sector basket to reduce double-counting.</div></div>`;
+   return showSheet('Indian Sector Breadth','12 NSE sector and thematic benchmarks',body);
  }
  if(type==='sector'){
    return openSectorDetail(arg);
@@ -2208,7 +2669,7 @@ async function refreshNSEDirectory(){
  let saved=null;try{saved=JSON.parse(localStorage.getItem(NSE_DIRECTORY_STORE)||'null')}catch(_){}
  if(saved?.items?.length) displayNSEDirectory(saved.items,`saved list ${saved.date||''}`);
  if(saved?.date===indiaDateKey())return;
- if(!API_BASE){el.textContent='NSE directory requires the Cloudflare market service. Direct ticker entry remains available.';return}
+ if(!API_BASE){el.textContent='NSE directory requires the market data service. Direct ticker entry remains available.';return}
  try{
    const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),11000);
    let res;try{res=await fetch(`${API_BASE}/api/symbols`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(t)}
@@ -2225,6 +2686,7 @@ function setWatchSymbol(s){
   return;
  }
  selectedPulseSymbol=symbol;
+ toggleBreadthWatchNav();
  document.getElementById('watchSearch').value=symbol==='^NSEI'?'':symbol;
  document.getElementById('watchStatus').textContent=`Watching ${activeSymbolName()} · ${symbol==='^NSEI'?'broad market':'individual stock'}`;
  latestPulsePack=pulseDataBySymbol[symbol]||null;
@@ -2278,7 +2740,7 @@ async function loadWatchPulse(force=false){
  if(!force&&latestPulsePack&&lastPulseRefreshKey===key)return;
  pulseFetchActive=true;lastPulseAttemptMs=Date.now();
  const status=document.getElementById('frameFetchStatus');
- if(status) status.textContent='Checking completed candles through Cloudflare…';
+ if(status) status.textContent='Checking the latest completed price period…';
  try{
   const c=new AbortController();const timer=setTimeout(()=>c.abort(),14000);
   let response;
@@ -2465,11 +2927,115 @@ function maybeRefreshPulse(){
  if(!pulseFetchActive&&(!latestPulsePack||lastPulseRefreshKey!==key||retry))loadWatchPulse(retry);
 }
 
+
+// Participant positions are EOD open interest, not trade confirmations or predictions.
+let posState=null,posSelected='FII',posFetching=false,posLastChecked=0,posUpdateNote='';
+const POS_GROUPS=['FII','DII','PRO','RETAIL'];
+const POS_COLUMNS={future:['Future Index Long','Future Index Short'],call:['Option Index Call Long','Option Index Call Short'],put:['Option Index Put Long','Option Index Put Short']};
+function posFormat(n,sign=false){if(!Number.isFinite(Number(n)))return '—';const v=Number(n);return (sign&&v>0?'+':'')+v.toLocaleString('en-IN',{maximumFractionDigits:0})}
+function posDateFmt(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s||''))return 'Date not available';return new Date(s+'T12:00:00+05:30').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}
+function posDateFromName(name){const a=String(name||'').match(/fao_participant_oi_(\d{2})(\d{2})(\d{4})\.csv$/i);if(!a)return null;const d=`${a[3]}-${a[2]}-${a[1]}`;const x=new Date(d+'T12:00:00Z');return Number.isFinite(+x)&&x.toISOString().slice(0,10)===d?d:null;}
+function posParseCsv(raw){
+ const lines=String(raw).replace(/^\uFEFF/,'').split(/\r?\n/).filter(s=>s.trim());
+ const parsed=lines.map(line=>{const out=[];let b='',quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(quoted&&line[i+1]==='"'){b+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){out.push(b.trim());b='';}else b+=c;}out.push(b.trim());return out;});
+ const normal=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const headerIndex=parsed.findIndex(r=>r.some(c=>normal(c)==='clienttype')&&r.some(c=>normal(c)==='futureindexlong'));
+ if(headerIndex<0)throw Error('Please use the NSE F&O participant-wise open-interest CSV.');
+ const header=parsed[headerIndex].map(normal);
+ const required=['clienttype','futureindexlong','futureindexshort','optionindexcalllong','optionindexcallshort','optionindexputlong','optionindexputshort'];
+ if(!required.every(k=>header.includes(k)))throw Error('The selected file is missing required index F&O columns.');
+ const rows={};for(const row of parsed.slice(headerIndex+1)){
+  const p=normal(row[header.indexOf('clienttype')]);const key=p==='client'?'RETAIL':p==='fii'?'FII':p==='dii'?'DII':p==='pro'?'PRO':null;
+  if(!key)continue;const obj={};for(const k of required.slice(1)){
+    const s=String(row[header.indexOf(k)]??'').replace(/[,\s]/g,'');if(!/^-?\d+$/.test(s))throw Error('A contract position is missing or invalid.');obj[k]=Number(s);
+  }rows[key]=obj;
+ }
+ if(POS_GROUPS.some(k=>!rows[k]))throw Error('The file must contain FII, DII, Pro and Client rows.');
+ return rows;
+}
+function posAdaptRows(rows){const out={};for(const group of POS_GROUPS){const r=rows[group];if(!r)continue;out[group]={};for(const kind of Object.keys(POS_COLUMNS)){const [l,s]=POS_COLUMNS[kind].map(k=>k.toLowerCase().replace(/[^a-z0-9]/g,''));out[group][kind]={long:r[l],short:r[s],net:r[l]-r[s]};}}return out;}
+function posCacheSave(data){try{localStorage.setItem('mm9ParticipantEOD',JSON.stringify({savedAt:Date.now(),data}));}catch(_){}}
+function posCacheLoad(){try{const x=JSON.parse(localStorage.getItem('mm9ParticipantEOD')||'null');return x?.data?.current?.FII?x.data:null}catch(_){return null}}
+function posNetChange(group,kind){const cur=posState?.current?.[group]?.[kind]?.net,old=posState?.previous?.[group]?.[kind]?.net;return Number.isFinite(cur)&&Number.isFinite(old)?cur-old:null;}
+function posMarketContext(){
+ const n=marketData?.nifty||{},v=marketData?.vix||{};
+ const marketDate=Number.isFinite(Number(marketData?.asOfEpoch))?new Date(Number(marketData.asOfEpoch)).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}):null;
+ const matching=posState?.date&&marketDate===posState.date;
+ const nq=Number.isFinite(n.price)&&n.price>0?`${fmtNum(n.price)} (${fmtPct(n.pct)})`:'Unavailable';
+ const vq=Number.isFinite(v.price)&&v.price>0?`${fmtNum(v.price)} (${fmtPct(v.pct)})`:'Unavailable';
+ const breadth=marketData?.breadth||{};
+ const breadthValue=Number.isFinite(breadth.adv)&&Number.isFinite(breadth.dec)?`${breadth.adv} rising / ${breadth.dec} falling`:'Unavailable';
+ const sectors=sectorStats();const sectorValue=sectors?`${sectors.positive} / ${sectors.total} positive`:'Unavailable';
+ const model=Number.isFinite(n.pct)?scoreModel():null;
+ return `<div class="detailsection"><h4>Compare with market direction</h4>
+ <div class="detailgrid">${detailCell('Nifty 50',nq,cls(n.pct))}${detailCell('India VIX',vq,cls(v.pct))}${detailCell('Nifty 50 breadth',breadthValue)}${detailCell('Monitored index strength',sectorValue)}${model?detailCell('Market Pulse',`${model.score>0?'+':''}${model.score} · ${model.state}`):detailCell('Market Pulse','Unavailable')}${detailCell('Date alignment',matching?'Same session':'Check dates')}</div>
+ <p class="position-note">${matching?'The daily participant report and the Nifty observation refer to the same date.':'The derivatives report and market readings may come from different trading dates; do not treat them as same-session confirmation.'} Breadth and sector index observations may also have separate timestamps. A Pulse score measures observed market conditions, not the probability of a trade succeeding.</p>
+ <p class="position-note">A position change is not proof of executed purchases, and option writers or hedgers may create the opposite exposure. The four participant groups are not independent votes that can simply be added together.</p></div>`;
+}
+function posCue(kind,delta){if(!Number.isFinite(delta))return ['No comparison','flat'];const directional=kind==='put'?-delta:delta;return directional>0?['Positive tilt','up']:directional<0?['Negative tilt','down']:['No change','flat'];}
+function posRows(group){
+ const labels={future:'Index futures',call:'Index calls',put:'Index puts'};
+ return Object.keys(labels).map(kind=>{const x=posState.current?.[group]?.[kind];if(!x)return '';
+  const delta=posNetChange(group,kind);const [cue,clsName]=posCue(kind,delta);
+  return `<tr><td><strong>${labels[kind]}</strong><div class="position-note">Long ${posFormat(x.long)} · Short ${posFormat(x.short)}</div></td><td><strong class="${cls(x.net)}">${posFormat(x.net,true)}</strong></td><td><strong class="${cls(delta)}">${delta==null?'—':posFormat(delta,true)}</strong></td><td><span class="${clsName}">${cue}</span></td></tr>`;
+ }).join('');
+}
+function posHeadline(){const n=posState?.current?.FII?.future?.net,d=posNetChange('FII','future');if(n==null)return 'Index futures data pending';const stance=n>0?'net long':n<0?'net short':'balanced';const move=d==null?'previous-session comparison unavailable':d>0?'net exposure increased':d<0?'net exposure decreased':'unchanged since the previous session';return `FIIs are ${stance} in index futures; ${move}.`}
+function posCsvUI(){return `<details class="position-upload"><summary style="cursor:pointer;font-weight:850;color:var(--navy)">Import an NSE report (optional)</summary><p class="position-note" style="margin-top:8px">Only needed if automatic updates are unavailable. Download the “F&O-Participant wise Open Interest (CSV)” report from NSE.</p><label for="posCurrentFile">Report for the latest available trading day</label><input id="posCurrentFile" type="file" accept=".csv,text/csv"><label for="posPreviousFile">Previous trading day (optional)</label><input id="posPreviousFile" type="file" accept=".csv,text/csv"><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button class="btn primary" onclick="posImportFiles()">Import report</button><a class="btn soft" href="https://www.nseindia.com/all-reports-derivatives" rel="noopener noreferrer" target="_blank" style="text-decoration:none">Find NSE report ↗</a></div><div class="position-note" id="posImportStatus" style="margin-top:6px"></div></details>`;}
+function posAutoStatus(){
+ const current=posState?.current?.FII;
+ if(posFetching)return `<div class="position-feedstatus"><span class="position-live-mark">◌</span><div><b>Checking the latest daily report</b><div class="position-note">Published NSE figures are checked after trading hours.</div></div></div>`;
+ if(current){const line=posUpdateNote||`Showing the latest verified report available to this device.`;
+  return `<div class="position-feedstatus"><span class="position-live-mark">✓</span><div><b>Last available report · ${posDateFmt(posState.date)}</b><div class="position-note">${escText(line)} Figures update once per trading day.</div></div></div>`;}
+ return `<div class="position-feedstatus"><span class="position-live-mark">i</span><div><b>Daily report not available yet</b><div class="position-note">${escText(posUpdateNote||'The latest NSE participant figures could not be retrieved. You can try again or use the published NSE report.')}</div></div></div>`;
+}
+function posAutoActions(){return `<div class="position-actions"><button class="btn primary" onclick="posRefresh(true)" ${posFetching?'disabled':''}>${posFetching?'Checking…':'Check latest report'}</button><a class="btn soft" href="https://www.nseindia.com/all-reports-derivatives" target="_blank" rel="noopener noreferrer" style="text-decoration:none">NSE reports ↗</a></div>`;}
+function posDetailBody(){
+ if(!posState?.current?.FII)return `${posAutoStatus()}${posAutoActions()}${posCsvUI()}`;
+ const tabs=POS_GROUPS.map(x=>`<button class="${posSelected===x?'on':''}" onclick="posChoose('${x}')">${x==='RETAIL'?'Client / Retail':x}</button>`).join('');
+ const p=posState.current[posSelected],d=posNetChange(posSelected,'future');
+ return `${posAutoStatus()}
+ <div class="detailgrid">${detailCell('Index futures · Net OI',posFormat(p.future.net,true),cls(p.future.net))}${detailCell('Change vs previous report',d==null?'—':posFormat(d,true),cls(d))}</div>
+ <div class="position-controls">${tabs}</div>
+ <div class="position-chartbox"><b>${posSelected==='RETAIL'?'Client / Retail':posSelected} · Index derivatives</b><div class="position-note">Net = long − short. Change = this trading session's net OI − previous session's net OI. Measured in contracts.</div></div>
+ <div style="overflow-x:auto"><table class="position-matrix"><thead><tr><th>Instrument</th><th>Net OI</th><th>Change</th><th>Positioning</th></tr></thead><tbody>${posRows(posSelected)}</tbody></table></div>
+ <div class="detailsection"><h4>What it means</h4><p class="position-note">${escText(posSelected==='FII'?posHeadline():`See whether ${posSelected==='RETAIL'?'client':posSelected} positions are building or reducing across futures, calls and puts.`)} An open-interest change can reflect a hedge, not necessarily a directional bet.</p></div>
+ ${posMarketContext()}
+ <div class="detailsection"><h4>Report dates</h4><p class="position-note">Latest available: ${posDateFmt(posState.date)} · Previous: ${posState.previousDate?posDateFmt(posState.previousDate):'Not yet available'}. Data is published at end of day, not in real time.</p>${posAutoActions()}</div>
+ ${posCsvUI()}`;
+}
+function renderPosPeek(){const el=document.getElementById('posFiiNet');if(!el)return;const n=posState?.current?.FII?.future?.net,d=posNetChange('FII','future');el.textContent=n==null?'—':posFormat(n,true);el.className=cls(n);const ch=document.getElementById('posFiiChange');ch.textContent=d==null?'—':posFormat(d,true);ch.className=cls(d);
+ document.getElementById('posPreviewFoot').textContent=posState?.date?`As of ${posDateFmt(posState.date)} · End-of-day open interest · ${posState.previousDate?'Previous session '+posDateFmt(posState.previousDate):'Comparison not yet available'}`:'Daily participant analysis · Latest available NSE report';}
+function posChoose(group){if(!POS_GROUPS.includes(group))return;posSelected=group;posRedraw(true)}
+function posRedraw(keepScroll=false){if(activeDetailKind!=='positioning')return;const sheet=document.getElementById('detailSheet');if(!sheet?.classList.contains('open'))return;const before=sheet.scrollTop;document.getElementById('detailBody').innerHTML=posDetailBody();if(keepScroll)sheet.scrollTop=before;}
+function openPositioningDetail(){showSheet('F&O Participant Positioning','FII · DII · PRO · Client · Daily analysis',posDetailBody());activeDetailKind='positioning';posRefresh(false);}
+async function posRefresh(force=false){
+ if(posFetching||(!force&&Date.now()-posLastChecked<2*3600000))return;
+ posFetching=true;posLastChecked=Date.now();posUpdateNote='';posRedraw(true);
+ try{
+  const res=await fetch(`${API_BASE}/api/positions${force?'?refresh=1':''}`,{cache:'no-store',signal:AbortSignal.timeout(22000)});
+  const data=await res.json();
+  if(res.ok&&data.ok&&data.current?.FII){
+   if(!posState||data.date>=posState.date){posState=data;posCacheSave(data)}
+   posUpdateNote=data.stored?'Showing a previously verified NSE report.':'Verified NSE participant-wise data.';
+  }else posUpdateNote=posState?.current?.FII?'No newer report was available. The previous verified report is retained.':'Unable to retrieve a verified daily report. Please try again later.';
+ }catch(_){posUpdateNote=posState?.current?.FII?'The source could not be checked. Your saved report is still available.':'Could not check the report at this time. Please try later.';}
+ finally{posFetching=false;renderPosPeek();posRedraw(true)}
+}
+async function posImportFiles(){const f=document.getElementById('posCurrentFile')?.files?.[0],p=document.getElementById('posPreviousFile')?.files?.[0],msg=document.getElementById('posImportStatus');if(!f){if(msg)msg.textContent='Choose the latest NSE open-interest CSV first.';return;}try{
+  const date=posDateFromName(f.name);if(!date)throw Error('Use the original NSE filename with its trading date.');
+  const current=posAdaptRows(posParseCsv(await f.text()));let previous=null,previousDate=null;
+  if(p){previousDate=posDateFromName(p.name);if(!previousDate||previousDate>=date)throw Error('The previous NSE report must have an earlier date.');previous=posAdaptRows(posParseCsv(await p.text()));}
+  posState={ok:true,date,previousDate,current,previous,sourceLabel:'NSE participant report',sourceUrl:'https://www.nseindia.com/all-reports-derivatives'};posCacheSave(posState);renderPosPeek();posRedraw(true);
+ }catch(e){if(msg)msg.textContent=e.message||'Could not read the selected NSE report.';}}
+
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
- document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false);refreshNiftyBreadth(false);refreshSectorSnapshot(false)}window.scrollTo({top:0,behavior:'smooth'});
+ document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.getElementById(t.dataset.tab).classList.add('active');if(t.dataset.tab==='markets'){refreshGold(false);refreshSilver(false);refreshNiftyBreadth(false);refreshSectorSnapshot(false);posRefresh(false)}window.scrollTo({top:0,behavior:'smooth'});
 }));
 window.addEventListener('load',()=>{
+ posState=posCacheLoad();renderPosPeek();
+ toggleBreadthWatchNav();
  try{const saved=JSON.parse(localStorage.getItem('mm9IndiaGoldBenchmark')||'null');if(saved?.data?.kind==='india-daily-benchmark'&&Date.now()-saved.at<7*86400000)goldQuote=saved.data;}catch(_){}
  renderGoldPeek();
  renderMetalOverviews();

@@ -25,7 +25,7 @@ const SECTOR_SYMBOLS = {
 
 
 const FULL_SECTOR_INDEX_NAMES = ["IT", "Auto", "Pharma", "FMCG", "Metal", "Realty", "Energy", "PSU Bank", "Financial Services", "Infrastructure", "Media", "Banking"];
-const OFFICIAL_SECTOR_CONSTITUENT_FILES = {"IT": "ind_niftyitlist.csv", "Auto": "ind_niftyautolist.csv", "Banking": "ind_niftybanklist.csv", "Pharma": "ind_niftypharmalist.csv", "FMCG": "ind_niftyfmcglist.csv", "Metal": "ind_niftymetallist.csv", "Realty": "ind_niftyrealtylist.csv", "PSU Bank": "ind_niftypsubanklist.csv", "Financial Services": "ind_niftyfinancelist.csv", "Media": "ind_niftymedialist.csv", "Healthcare": "ind_niftyhealthcarelist.csv", "Private Bank": "ind_niftyprivatebanklist.csv", "Consumer Durables": "ind_niftyconsumerdurableslist.csv", "Oil and Gas": "ind_niftyoilgaslist.csv"};
+const OFFICIAL_SECTOR_CONSTITUENT_FILES = {"IT": "ind_niftyitlist.csv", "Auto": "ind_niftyautolist.csv", "Banking": "ind_niftybanklist.csv", "Pharma": "ind_niftypharmalist.csv", "FMCG": "ind_niftyfmcglist.csv", "Metal": "ind_niftymetallist.csv", "Realty": "ind_niftyrealtylist.csv", "PSU Bank": "ind_niftypsubanklist.csv", "Financial Services": "ind_niftyfinancelist.csv", "Media": "ind_niftymedialist.csv", "Infrastructure": "ind_niftyinfralist.csv", "Energy": "ind_niftyenergylist.csv", "Healthcare": "ind_niftyhealthcarelist.csv", "Private Bank": "ind_niftyprivatebanklist.csv", "Consumer Durables": "ind_niftyconsumerdurableslist.csv", "Oil and Gas": "ind_niftyoilgaslist.csv"};
 
 const SECTOR_META = {
   "IT": {
@@ -59,7 +59,7 @@ const SECTOR_META = {
     drivers: "Home-loan rates, housing demand, project launches, liquidity, urban demand and regulation."
   },
   "Energy": {
-    slug: "",
+    slug: "nifty-energy",
     scope: "The Energy signal represents listed Indian companies linked to the energy value chain.",
     drivers: "Crude oil, gas and power prices, refining margins, demand, regulation and global energy markets."
   },
@@ -74,7 +74,7 @@ const SECTOR_META = {
     drivers: "Interest rates, liquidity, credit growth, asset quality, market activity and regulation."
   },
   "Infrastructure": {
-    slug: "",
+    slug: "nifty-infrastructure",
     scope: "The Infrastructure signal represents listed Indian companies exposed to infrastructure and capital-expenditure activity.",
     drivers: "Government/private capex, order books, project awards, financing costs and execution."
   },
@@ -97,6 +97,7 @@ function sectorSymbol(name) {
 
 function officialSectorLink(name) {
   const slug = SECTOR_META[name]?.slug;
+  if(name==='Infrastructure'||name==='Energy')return `https://www.niftyindices.com/indices/equity/thematic-indices/${slug}`;
   return slug
     ? `https://www.niftyindices.com/indices/equity/sectoral-indices/${slug}`
     : "https://www.niftyindices.com/indices/equity/sectoral-indices";
@@ -361,6 +362,61 @@ Instructions:
   return { ok: true, insight, sources: sources.slice(0, 5) };
 }
 
+
+// R5.2.4: NSE thematic Infrastructure sector allocation. One symbol, one group.
+const INFRA_SECTOR_CLASSES=[
+ 'Oil, Gas & Consumable Fuels','Telecommunication','Construction','Power',
+ 'Construction Materials','Capital Goods','Services','Healthcare',
+ 'Automobile and Auto Components','Consumer Services','Realty'
+];
+function normaliseInfraClass(raw){
+ const key=String(raw||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const keys={
+  oilgasconsumablefuels:0,telecommunication:1,telecommunications:1,
+  construction:2,power:3,constructionmaterials:4,capitalgoods:5,
+  services:6,healthcare:7,automobileandautocomponents:8,
+  consumerservices:9,realty:10,
+ };
+ return Number.isInteger(keys[key])?INFRA_SECTOR_CLASSES[keys[key]]:null;
+}
+function parseInfraCsv(csvText){
+ const rows=String(csvText||'').replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean);
+ if(rows.length<2)throw Error('Empty official constituent CSV');
+ const header=readCsvLine(rows.shift()).map(x=>x.trim().toLowerCase());
+ const symbolIdx=header.findIndex(x=>/symbol/.test(x));
+ const nameIdx=header.findIndex(x=>/company.*name|name.*company|^company$/.test(x));
+ const industryIdx=header.findIndex(x=>x==='industry'||x==='sector'||x==='nse industry');
+ if(symbolIdx<0)throw Error('Official CSV has no symbol column');
+ const seen=new Set(),unclassified=[];
+ const categories=INFRA_SECTOR_CLASSES.map(name=>({name,items:[]}));
+ let memberCount=0;
+ for(const line of rows){
+   const cols=readCsvLine(line);
+   const symbol=String(cols[symbolIdx]||'').trim().toUpperCase();
+   if(!/^[A-Z0-9&-]{1,25}$/.test(symbol)||seen.has(symbol))continue;
+   seen.add(symbol);memberCount++;
+   const stock={symbol,name:String(cols[nameIdx]||symbol).trim().slice(0,120)};
+   const category=industryIdx>=0?normaliseInfraClass(cols[industryIdx]):null;
+   const bucket=categories.find(x=>x.name===category);
+   if(bucket)bucket.items.push(stock);else unclassified.push({...stock,industry:industryIdx<0?'Industry column missing':String(cols[industryIdx]||'')});
+ }
+ if(memberCount===0||memberCount>45)throw Error('Invalid Infrastructure constituent count');
+ return {ok:true,categories,categoryCount:categories.filter(x=>x.items.length).length,memberCount,unclassified,industryColumnAvailable:industryIdx>=0};
+}
+async function infrastructureBreakdownEndpoint(request,ctx){
+ const sourceUrl='https://www.niftyindices.com/IndexConstituent/ind_niftyinfralist.csv';
+ const officialLink='https://www.niftyindices.com/indices/equity/thematic-indices/nifty-infrastructure';
+ try{
+  const response=await fetch(sourceUrl,{headers:{accept:'text/csv,application/octet-stream,text/plain'},cf:{cacheTtl:21600,cacheEverything:true}});
+  if(!response.ok)throw Error('Official NSE CSV HTTP '+response.status);
+  const t=await response.text();if(t.length>150000)throw Error('Unexpected constituent file size');
+  const data=parseInfraCsv(t);
+  return json({...data,source:'NSE Indices constituent CSV',sourceUrl,officialLink,sourceDate:'Published file; refer to NSE for reconstitution date'},200,{'cache-control':'public, max-age=3600, s-maxage=21600'});
+ }catch(e){
+  return json({ok:false,error:String(e?.message||e),sourceUrl,officialLink,categories:INFRA_SECTOR_CLASSES.map(name=>({name,items:[]}))},503,{'cache-control':'no-store'});
+ }
+}
+
 async function sectorConstituents(name,ctx){
  if(!(['IT','Auto','Pharma','FMCG','Metal','Realty','Energy','PSU Bank','Financial Services','Infrastructure','Media','Banking'].includes(name)))return {ok:false,error:'Sector not part of the 12 monitored sectors'};
  const file=OFFICIAL_SECTOR_CONSTITUENT_FILES[name];
@@ -378,7 +434,7 @@ async function sectorConstituents(name,ctx){
   if(si<0)throw Error('Unexpected CSV header');
   const items=lines.map(line=>readCsvLine(line)).map(cols=>({symbol:(cols[si]||'').trim(),name:(cols[ni]||'').trim()})).filter(x=>/^[A-Z0-9&-]{1,25}$/.test(x.symbol)).slice(0,80);
   if(!items.length)throw Error('No valid stock symbols in constituent file');
-  return {ok:true,items,sourceUrl:link,sourceDate:'Published file; review NSE methodology for reconstitution date',source:'NSE Indices constituent CSV'};
+  const parsed=parseSectorIndexCsv(t,name);return {ok:true,items,groups:parsed.groups,sourceUrl:link,sourceDate:'Published index list',source:'NSE Indices'};
  }catch(e){return {ok:false,error:e.message||String(e),sourceUrl:link}}
 }
 
@@ -1317,9 +1373,17 @@ async function breadthBatchEndpoint(request,ctx){
   // Small bounded concurrency reduces burst rate limits while remaining under Free Worker's 50 subrequest cap.
   for(let offset=0;offset<25;offset+=5){
    const results=await Promise.allSettled(names.slice(offset,offset+5).map(async symbol=>{
-     const q=normalizeChart(await fetchYahooChart(symbol+'.NS','1d','2d'));
-     if(q.epoch===null||q.pct===null||q.price===null)throw Error('Quote has no price or timestamp');
-     return {symbol,pct:q.pct,epoch:q.epoch,quoteDate:quoteDateIST(q.epoch)};
+     const chart=await fetchYahooChart(symbol+'.NS','1d','2d');
+     const q=normalizeChart(chart),closes=chart.indicators?.quote?.[0]?.close||[],times=chart.timestamp||[];
+     let lastClose=null,lastEpoch=null;
+     for(let i=0;i<closes.length;i++){
+       const c=num(closes[i]);if(c!==null&&c>0&&num(times[i])!==null){lastClose=c;lastEpoch=num(times[i])}
+     }
+     const price=q.price!==null&&q.price>0?q.price:lastClose;
+     const epoch=q.price!==null&&q.price>0?q.epoch:lastEpoch;
+     const pct=q.pct!==null?q.pct:(price!==null&&q.prev!==null&&q.prev>0?(price-q.prev)/q.prev*100:null);
+     if(epoch===null||pct===null||price===null)throw Error('Quote has no price or timestamp');
+     return {symbol,pct,price,change:q.prev!==null?price-q.prev:null,epoch,quoteDate:quoteDateIST(epoch)};
    }));
    results.forEach((r,i)=>{if(r.status==='fulfilled')items.push(r.value);else errors.push(String(r.reason?.message||r.reason))});
   }
@@ -1330,12 +1394,178 @@ async function breadthBatchEndpoint(request,ctx){
  }catch(e){return json({ok:false,part,error:String(e?.message||e),sourceUrl:BREADTH_LIST_CSV},503,{'cache-control':'no-store'})}
 }
 
+
+async function nifty50StocksEndpoint(request,ctx){
+ const url='https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050';
+ const origin=new URL(request.url).origin;
+ const key=new Request(origin+'/api/nifty50-stocks?v=r525');const cached=await caches.default.match(key);
+ if(cached)return cached;
+ const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),8500);
+ try{
+  const response=await fetch(url,{signal:ctrl.signal,headers:{'accept':'application/json','referer':'https://www.nseindia.com/market-data/live-equity-market','user-agent':'Mozilla/5.0 (compatible; MM9 Market Intelligence/1.0)'},cf:{cacheTtl:30,cacheEverything:true}});
+  if(!response.ok)throw Error('NSE returned HTTP '+response.status);
+  const data=await response.json();
+  const rows=Array.isArray(data.data)?data.data:[];
+  const priceValue=v=>v===null||v===undefined||v===''?null:Number(String(v).replace(/,/g,''));
+  const items=rows.filter(x=>x?.symbol&&x.symbol!=='NIFTY 50'&&x.symbol!=='NIFTY50').map(x=>{
+   const price=priceValue(x.lastPrice??x.lastTradedPrice??x.ltp??x.last??x.price??x.meta?.lastPrice),prev=priceValue(x.previousClose??x.prevClose??x.meta?.previousClose),pct=priceValue(x.pChange??x.percentChange);
+   return {symbol:String(x.symbol).trim().toUpperCase(),name:String(x.meta?.companyName||x.companyName||'').trim(),price:Number.isFinite(price)&&price>0?price:null,
+    change:Number.isFinite(price)&&Number.isFinite(prev)?Math.round((price-prev)*100)/100:null,pct:Number.isFinite(pct)?pct:(Number.isFinite(price)&&Number.isFinite(prev)&&prev>0?(price-prev)/prev*100:null)};
+  }).filter(x=>/^[A-Z0-9&-]{1,22}$/.test(x.symbol)&&Number.isFinite(x.pct));
+  if(items.length!==50||new Set(items.map(x=>x.symbol)).size!==50)throw Error('NSE provided '+items.length+' of 50 valid constituent quotes');
+  const raw=String(data.timestamp||'').trim();
+  if(!raw)throw Error('Exchange snapshot timestamp missing');
+  const payload={ok:true,items,adv:items.filter(x=>x.pct>0).length,dec:items.filter(x=>x.pct<0).length,
+   unchanged:items.filter(x=>x.pct===0).length,coverage:50,pricesAvailable:items.filter(x=>x.price!==null).length,asOf:raw,source:'NSE official Nifty 50 constituent snapshot',sourceUrl:url};
+  const result=json(payload,200,{'cache-control':'public, max-age=30, s-maxage=30'});
+  ctx.waitUntil(caches.default.put(key,result.clone()));return result;
+ }catch(error){return json({ok:false,error:'NSE 50-stock source unavailable: '+String(error?.message||error),sourceUrl:'https://www.nseindia.com/market-data/live-equity-market'},503,{'cache-control':'no-store'})}
+ finally{clearTimeout(timeout)}
+}
+
+
+// Company membership and official industry classification for monitored NSE indices.
+const VALID_INDEX_GROUPS=new Set(FULL_SECTOR_INDEX_NAMES);
+function cleanIndustryLabel(value){
+ const s=String(value??'').trim().replace(/\s+/g,' ').slice(0,90);
+ return !s||/^(-|na|n\/a|null|undefined)$/i.test(s)?null:s;
+}
+function parseSectorIndexCsv(raw,name){
+ const lines=String(raw||'').replace(/^\uFEFF/,'').split(/\r?\n/).filter(x=>x.trim());
+ if(lines.length<2)throw Error('No index constituents supplied');
+ const headers=readCsvLine(lines.shift()).map(x=>x.trim().toLowerCase());
+ const sym=headers.findIndex(x=>x==='symbol'||x.includes('symbol'));
+ const comp=headers.findIndex(x=>/company.*name|name.*company/.test(x));
+ const broad=headers.findIndex(x=>x==='sector'||x==='industry'||x==='nse industry');
+ const basic=headers.findIndex(x=>x==='basic industry'||x==='basicindustry');
+ if(sym<0)throw Error('No symbols in source');
+ const unique=new Map();
+ for(const line of lines){
+  const cols=readCsvLine(line),symbol=String(cols[sym]||'').trim().toUpperCase();
+  if(!/^[A-Z0-9&-]{1,25}$/.test(symbol)||unique.has(symbol))continue;
+  const industry=cleanIndustryLabel(broad>=0?cols[broad]:null);
+  const basicIndustry=cleanIndustryLabel(basic>=0?cols[basic]:null);
+  unique.set(symbol,{symbol,name:String(comp>=0?cols[comp]||symbol:symbol).trim().slice(0,115),industry,basicIndustry});
+ }
+ if(!unique.size||unique.size>100)throw Error('Constituent count out of range');
+ // The generic index CSV typically reports NSE's broad Industry column.
+ // Use that column. If it is absent, show an ungrouped member list, never guess.
+ const groups=new Map();
+ for(const stock of unique.values()){
+   const group=stock.industry||'All companies';
+   if(!groups.has(group))groups.set(group,[]);
+   groups.get(group).push({symbol:stock.symbol,name:stock.name,basicIndustry:stock.basicIndustry});
+ }
+ return {ok:true,name,total:unique.size,groups:[...groups.entries()].sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0])).map(([group,items])=>({name:group,items:items.sort((a,b)=>a.name.localeCompare(b.name))})),classification:unique.size&&broad>=0?'Published industry classification':'Constituent companies',sourceLabel:'NSE Indices'};
+}
+async function sectorBreakdownEndpoint(request,ctx){
+ const url=new URL(request.url),name=String(url.searchParams.get('name')||'').trim();
+ if(!VALID_INDEX_GROUPS.has(name))return json({ok:false,error:'Unknown index'},400,{'cache-control':'no-store'});
+ const officialLink=officialSectorLink(name);
+ const filename=OFFICIAL_SECTOR_CONSTITUENT_FILES[name];
+ const sourceUrl=`https://www.niftyindices.com/IndexConstituent/${filename}`;
+ const key=new Request(`${url.origin}/api/sector-breakdown?name=${encodeURIComponent(name)}&v=r525`);
+ const cached=await caches.default.match(key);
+ if(cached)return cached;
+ try{
+  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),9000);
+  let r;try{r=await fetch(sourceUrl,{signal:abort.signal,headers:{accept:'text/csv,application/octet-stream,text/plain'},cf:{cacheTtl:86400,cacheEverything:true}})}finally{clearTimeout(timer)}
+  if(!r.ok)throw Error('Index constituent source unavailable');
+  const raw=await r.text();if(raw.length>200000)throw Error('Unexpected index file size');
+  const data=parseSectorIndexCsv(raw,name);
+  const response=json({...data,officialLink,sourceUrl,updatedAt:new Date().toISOString()},200,{'cache-control':'public, max-age=3600, s-maxage=21600'});
+  ctx.waitUntil(caches.default.put(key,response.clone()));return response;
+ }catch(e){
+  return json({ok:false,name,officialLink,error:'The latest company list could not be retrieved.'},503,{'cache-control':'no-store'});
+ }
+}
+
+
+// Official NSE F&O participant-wise index position reports: end-of-day data only.
+const MM9_PART_GROUPS=['FII','DII','PRO','RETAIL'];
+function mm9CsvParse(raw){
+ const lines=String(raw||'').replace(/^\uFEFF/,'').split(/\r?\n/).filter(s=>s.trim());
+ return lines.map(line=>{const out=[];let b='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){b+='"';i++}else q=!q}else if(c===','&&!q){out.push(b.trim());b=''}else b+=c}out.push(b.trim());return out});
+}
+function mm9ParseParticipantOI(raw){
+ const lines=mm9CsvParse(raw),norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const hi=lines.findIndex(row=>row.some(c=>norm(c)==='clienttype')&&row.some(c=>norm(c)==='futureindexlong'));
+ if(hi<0)throw Error('Unsupported official participant report format');
+ const headers=lines[hi].map(norm),req=['clienttype','futureindexlong','futureindexshort','optionindexcalllong','optionindexcallshort','optionindexputlong','optionindexputshort'];
+ if(!req.every(k=>headers.includes(k)))throw Error('Missing required official participant OI fields');
+ const rows={};for(const row of lines.slice(hi+1)){
+  const p=norm(row[headers.indexOf('clienttype')]),id=p==='client'?'RETAIL':p==='fii'?'FII':p==='dii'?'DII':p==='pro'?'PRO':null;
+  if(!id)continue;const vals={};for(const k of req.slice(1)){const s=String(row[headers.indexOf(k)]??'').replace(/[,\s]/g,'');if(!/^-?\d+$/.test(s))throw Error('Invalid participant position');vals[k]=Number(s)}
+  rows[id]={future:{long:vals.futureindexlong,short:vals.futureindexshort,net:vals.futureindexlong-vals.futureindexshort},call:{long:vals.optionindexcalllong,short:vals.optionindexcallshort,net:vals.optionindexcalllong-vals.optionindexcallshort},put:{long:vals.optionindexputlong,short:vals.optionindexputshort,net:vals.optionindexputlong-vals.optionindexputshort}};
+ }
+ if(MM9_PART_GROUPS.some(x=>!rows[x]))throw Error('Incomplete official participant report');
+ return rows;
+}
+function mm9IstDay(d=new Date()){const p=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);const r={};p.forEach(x=>r[x.type]=x.value);return `${r.year}-${r.month}-${r.day}`;}
+// Use the official dated EOD report. NSE may reject unattended cloud requests.
+async function mm9FetchPartDate(day){
+ const stamp=day.slice(8,10)+day.slice(5,7)+day.slice(0,4),filename=`fao_participant_oi_${stamp}.csv`;
+ const hosts=['https://nsearchives.nseindia.com/content/nsccl/','https://archives.nseindia.com/content/nsccl/'];
+ for(const host of hosts){try{
+  const r=await fetch(host+filename,{headers:{accept:'text/csv,text/plain,*/*'},signal:AbortSignal.timeout(4000),cf:{cacheTtl:86400,cacheEverything:true}});
+  if(!r.ok)continue;const content=await r.text();if(content.length>50000||content.length<100)continue;
+  return {date:day,rows:mm9ParseParticipantOI(content),sourceUrl:host+filename};
+ }catch(_){/* published file not available from this host */}}
+ return null;
+}
+function mm9PositionsCandidateDays(){
+ // After 18:45 IST, look for today's new EOD file; otherwise start at the previous trading weekday.
+ const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false});
+ const parts=Object.fromEntries(fmt.formatToParts(new Date()).map(p=>[p.type,p.value]));
+ const mins=(Number(parts.hour)%24)*60+Number(parts.minute),base=mm9IstDay();
+ const list=[];for(let i=0;i<16&&list.length<8;i++){
+  const d=new Date(`${base}T12:00:00Z`);d.setUTCDate(d.getUTCDate()-i);
+  if(d.getUTCDay()===0||d.getUTCDay()===6)continue;
+  if(i===0&&mins<1125)continue;
+  list.push(d.toISOString().slice(0,10));
+ }return list;
+}
+async function mm9PositionsReadSaved(env){
+ if(!env?.POSITIONS_KV)return null;
+ try{const v=await env.POSITIONS_KV.get('participant-eod-v1','json');return v?.current?.FII&&/^\d{4}-\d{2}-\d{2}$/.test(v.date||'')?v:null}catch(_){return null}
+}
+async function mm9PositionsEndpoint(request,env,ctx){
+ const url=new URL(request.url),force=url.searchParams.get('refresh')==='1';
+ const key=new Request(`${url.origin}/api/positions?r=528`),cache=caches.default;
+ if(!force){const hit=await cache.match(key);if(hit)return hit}
+ const candidates=mm9PositionsCandidateDays(),saved=await mm9PositionsReadSaved(env);
+ // Once the latest eligible session is verified, reuse it without hammering the exchange.
+ if(saved&&saved.date===candidates[0]&&saved.previous?.FII){
+  const result=json({...saved,sourceLabel:'NSE participant-wise open interest',stored:true,latestCheckedAt:new Date().toISOString()},200,{'cache-control':'public, max-age=7200, s-maxage=7200'});
+  ctx?.waitUntil?.(cache.put(key,result.clone()));return result;
+ }
+ let fetched=[];
+ // First check the newest four weekdays; only go further back when a complete pair is missing.
+ for(let i=0;i<candidates.length;i+=4){
+  const part=(await Promise.all(candidates.slice(i,i+4).map(day=>mm9FetchPartDate(day)))).filter(Boolean);
+  fetched.push(...part);fetched.sort((a,b)=>b.date.localeCompare(a.date));
+  if(fetched.length>=2)break;
+ }
+ const current=fetched[0],previous=fetched.find(x=>current&&x.date<current.date)||null;
+ let chosen=null,stored=false;
+ if(current&&(!saved||current.date>saved.date||current.date===saved.date&&previous&&!saved.previous)){
+  chosen={ok:true,date:current.date,previousDate:previous?.date||null,current:current.rows,previous:previous?.rows||null,sourceLabel:'NSE participant-wise open interest',sourceUrl:'https://www.nseindia.com/all-reports-derivatives',sourceFile:current.sourceUrl.split('/').pop(),updatedAt:new Date().toISOString(),endOfDay:true};
+  if(env?.POSITIONS_KV)ctx?.waitUntil?.(env.POSITIONS_KV.put('participant-eod-v1',JSON.stringify(chosen)));
+ }else if(saved){chosen=saved;stored=true}
+ else if(current){chosen={ok:true,date:current.date,previousDate:previous?.date||null,current:current.rows,previous:previous?.rows||null,sourceLabel:'NSE participant-wise open interest',sourceUrl:'https://www.nseindia.com/all-reports-derivatives',updatedAt:new Date().toISOString(),endOfDay:true}}
+ const result=chosen?{...chosen,stored,latestCheckedAt:new Date().toISOString(),updateAvailable:chosen.date===candidates[0]}:{ok:false,error:'Latest participant report is not available from the source right now.',sourceUrl:'https://www.nseindia.com/all-reports-derivatives',latestCheckedAt:new Date().toISOString(),endOfDay:true};
+ const ttl=chosen?1800:600,response=json(result,chosen?200:503,{'cache-control':`public, max-age=${ttl}, s-maxage=${ttl}`});
+ ctx?.waitUntil?.(cache.put(key,response.clone()));return response;
+}
+
 export default {
   // Optional daily Cron at 07:15 IST; requires SYMBOLS_KV binding for durable cross-client storage.
   async scheduled(controller,env,ctx){
-    try{const r=await symbolsEndpoint(new Request('https://mm9-market-proxy.pranav-gangurde1.workers.dev/api/symbols'),ctx,env,true);
-      if(!r.ok)console.log('Scheduled NSE refresh unavailable',r.status);
-    }catch(e){console.log('Scheduled NSE refresh failed',String(e))}
+    if(controller.cron!=='45 13 * * mon-fri'){
+      try{const r=await symbolsEndpoint(new Request('https://mm9-market-proxy.pranav-gangurde1.workers.dev/api/symbols'),ctx,env,true);
+        if(!r.ok)console.log('Scheduled NSE refresh unavailable',r.status);
+      }catch(e){console.log('Scheduled NSE refresh failed',String(e))}
+    }
   },
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -1376,6 +1606,7 @@ export default {
       return marketResponse(request, ctx);
     }
 
+    if (url.pathname === "/api/positions" && request.method === "GET") return mm9PositionsEndpoint(request,env,ctx);
     if (url.pathname === "/api/symbols" && request.method === "GET") return symbolsEndpoint(request,ctx,env);
 
     if (url.pathname === "/api/pulse" && request.method === "GET") {
@@ -1393,12 +1624,15 @@ export default {
       }catch(e){return json({ok:false,error:e?.message||"Pulse service temporarily unavailable"},502,{"cache-control":"no-store"});}
     }
 
+    if(url.pathname==='/api/infrastructure-breakdown'&&request.method==='GET')return infrastructureBreakdownEndpoint(request,ctx);
+    if(url.pathname==='/api/sector-breakdown'&&request.method==='GET')return sectorBreakdownEndpoint(request,ctx);
     if(url.pathname==='/api/sector-constituents'&&request.method==='GET'){
       const name=String(url.searchParams.get('name')||'').trim();
       const payload=await sectorConstituents(name,ctx);
       return json(payload,payload.ok?200:503,{'cache-control':payload.ok?'public, max-age=3600, s-maxage=21600':'no-store'});
     }
     if(url.pathname==='/api/gift'&&request.method==='GET')return giftEndpoint(request,ctx);
+    if(url.pathname==='/api/nifty50-stocks'&&request.method==='GET')return nifty50StocksEndpoint(request,ctx);
     if(url.pathname==='/api/breadth-batch'&&request.method==='GET')return breadthBatchEndpoint(request,ctx);
     if(url.pathname==='/api/breadth'&&request.method==='GET'){
       const cache=caches.default,key=new Request(`${url.origin}/api/breadth?v=r3`);

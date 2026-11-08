@@ -11,7 +11,7 @@
   },
   "triggers": {
     "crons": [
-      "45 1 * * mon-fri"
+      "45 1 * * mon-fri", "45 13 * * mon-fri"
     ]
   }
 }
